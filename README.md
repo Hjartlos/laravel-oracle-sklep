@@ -1,1 +1,1 @@
-W folderze database znajdują się struktury z bazy danych Oracle na których były wykonywane zapytania.
+W folderze database znajdują się struktury z bazy danych Oracle Cloud.
