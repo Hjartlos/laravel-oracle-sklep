@@ -1,0 +1,38 @@
+create sequence SQ_AD_ID
+    maxvalue 999999
+/
+
+create sequence SQ_AM_ID
+    minvalue 0
+    maxvalue 99999
+/
+
+create sequence SQ_KP_ID
+    minvalue 0
+    maxvalue 99999
+/
+
+create sequence SQ_KL_ID
+    minvalue 0
+    maxvalue 99999
+/
+
+create sequence SQ_PR_ID
+    minvalue 0
+    maxvalue 99999
+/
+
+create sequence SQ_PRO_ID
+    maxvalue 99999
+    nocache
+/
+
+create sequence SQ_TR_ID
+    minvalue 0
+    maxvalue 9999999
+/
+
+create sequence DBTOOLS$EXECUTION_HISTORY_SEQ
+/
+
+

@@ -1,0 +1,296 @@
+create table ADRES
+(
+    ADRESID         NUMBER        not null
+        primary key,
+    ULICA           VARCHAR2(100) not null,
+    NUMERDOMU       VARCHAR2(10)  not null,
+    NUMERMIESZKANIA VARCHAR2(10),
+    KODPOCZTOWY     VARCHAR2(10)  not null,
+    MIEJSCOWOSC     VARCHAR2(100) not null
+)
+/
+
+create table KLIENT
+(
+    KLIENTID               NUMBER        not null
+        primary key,
+    IMIE                   VARCHAR2(50)  not null,
+    NAZWISKO               VARCHAR2(50)  not null,
+    NUMERPOZWOLENIA        VARCHAR2(50)  not null,
+    TYPPOZWOLENIA          VARCHAR2(50)  not null,
+    DATAWAZNOSCIPOZWOLENIA DATE          not null,
+    ADRESID                NUMBER        not null
+        references ADRES,
+    EMAIL                  VARCHAR2(100) not null,
+    TELEFON                VARCHAR2(20)  not null,
+    STATUSAKTYWNOSCI       CHAR default 1
+        constraint CHK_KLIENT_STATUS
+            check (STATUSAKTYWNOSCI IN ('0', '1'))
+)
+/
+
+create trigger TR_KLIENT_SOFTDELETE
+    before delete
+    on KLIENT
+    for each row
+DECLARE
+    PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+    UPDATE KLIENT
+    SET STATUSAKTYWNOSCI = '0'
+    WHERE KLIENTID = :OLD.KLIENTID;
+
+    COMMIT;
+
+    RAISE_APPLICATION_ERROR(-20004, 'Klient został oznaczony jako nieaktywny.');
+END;
+/
+
+create table PRACOWNIK
+(
+    PRACOWNIKID      NUMBER        not null
+        primary key,
+    IMIE             VARCHAR2(50)  not null,
+    NAZWISKO         VARCHAR2(50)  not null,
+    STANOWISKO       VARCHAR2(50)  not null,
+    ADRESID          NUMBER        not null
+        references ADRES,
+    TYPPOZWOLENIA    VARCHAR2(20)  not null,
+    LOGIN            VARCHAR2(100) not null,
+    HASLO            VARCHAR2(255) not null,
+    STATUSAKTYWNOSCI CHAR default 1
+        constraint CHK_PRACOWNIK_STATUS
+            check (STATUSAKTYWNOSCI IN ('0', '1'))
+)
+/
+
+create trigger TR_PRACOWNIK_SOFTDELETE
+    before delete
+    on PRACOWNIK
+    for each row
+DECLARE
+    PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+    UPDATE PRACOWNIK
+    SET STATUSAKTYWNOSCI = '0'
+    WHERE PRACOWNIKID = :OLD.PRACOWNIKID;
+
+    COMMIT;
+    
+    RAISE_APPLICATION_ERROR(-20004, 'Pracownik został oznaczony jako nieaktywny.');
+END;
+/
+
+create table KATEGORIAPRODUKTOW
+(
+    KATEGORIAID         NUMBER        not null
+        primary key,
+    NAZWAKATEGORII      VARCHAR2(100) not null,
+    OPIS                CLOB          not null,
+    WYMAGANEUPRAWNIENIA VARCHAR2(50)  not null
+)
+/
+
+create table AMUNICJA
+(
+    AMUNICJAID NUMBER        not null
+        primary key,
+    NAZWA      VARCHAR2(100) not null,
+    CENA       NUMBER(10, 2) not null,
+    ILOSC      NUMBER        not null
+)
+/
+
+create trigger TR_AMUNICJA_SOFTDELETE
+    before delete
+    on AMUNICJA
+    for each row
+DECLARE
+    PRAGMA AUTONOMOUS_TRANSACTION;
+BEGIN
+    UPDATE AMUNICJA
+    SET ILOSC = 0
+    WHERE AMUNICJAID = :OLD.AMUNICJAID;
+
+    COMMIT;
+
+    RAISE_APPLICATION_ERROR(-20004, 'Ilość amunicji została ustawiona na 0.');
+END;
+/
+
+create table PRODUKT
+(
+    PRODUKTID    NUMBER         not null
+        primary key,
+    KATEGORIAID  NUMBER         not null
+        references KATEGORIAPRODUKTOW,
+    AMUNICJAID   NUMBER
+        references AMUNICJA,
+    NAZWA        VARCHAR2(100)  not null,
+    NUMERSERYJNY VARCHAR2(50)   not null,
+    CENA         NUMBER(10, 2)  not null,
+    DOSTEPNOSC   CHAR default 1 not null
+        constraint CHK_PRODUKT_DOSTEPNOSC
+            check (DOSTEPNOSC IN ('0', '1'))
+)
+/
+
+create trigger TR_PRODUKT_SOFTDELETE
+    before delete
+    on PRODUKT
+    for each row
+DECLARE
+    PRAGMA AUTONOMOUS_TRANSACTION;
+    v_produkty_w_zamowieniach NUMBER := 0;
+BEGIN
+    SELECT COUNT(*) INTO v_produkty_w_zamowieniach
+    FROM TRANSAKCJAPRODUKT
+    WHERE PRODUKTID = :OLD.PRODUKTID;
+
+    IF v_produkty_w_zamowieniach > 0 THEN
+        UPDATE PRODUKT
+        SET DOSTEPNOSC = '0'
+        WHERE PRODUKTID = :OLD.PRODUKTID;
+
+        COMMIT;
+
+        RAISE_APPLICATION_ERROR(-20003, 'Nie można usunąć produktu, który występuje w transakcjach. Produkt został oznaczony jako niedostępny.');
+    ELSE
+        UPDATE PRODUKT
+        SET DOSTEPNOSC = '0'
+        WHERE PRODUKTID = :OLD.PRODUKTID;
+
+        COMMIT;
+
+        RAISE_APPLICATION_ERROR(-20004, 'Produkt został oznaczony jako niedostępny.');
+    END IF;
+END;
+/
+
+create table TRANSAKCJA
+(
+    TRANSAKCJAID      NUMBER        not null
+        primary key,
+    KLIENTID          NUMBER        not null
+        references KLIENT,
+    PRACOWNIKID       NUMBER        not null
+        references PRACOWNIK,
+    DATATRANSAKCJI    DATE          not null,
+    WARTOSCTRANSAKCJI NUMBER(10, 2) not null
+)
+/
+
+create table TRANSAKCJAPRODUKT
+(
+    TRANSAKCJAID NUMBER not null
+        references TRANSAKCJA,
+    PRODUKTID    NUMBER not null
+        references PRODUKT,
+    ILOSC        NUMBER not null,
+    CENA         NUMBER(10, 2),
+    primary key (TRANSAKCJAID, PRODUKTID)
+)
+/
+
+create trigger TR_TRANSAKCJAPRODUKT_INSERT
+    after insert
+    on TRANSAKCJAPRODUKT
+    for each row
+DECLARE
+    v_AmunicjaID PRODUKT.AMUNICJAID%TYPE;
+BEGIN
+    SELECT AMUNICJAID INTO v_AmunicjaID
+    FROM PRODUKT
+    WHERE PRODUKTID = :NEW.PRODUKTID;
+
+    IF v_AmunicjaID IS NOT NULL AND :NEW.ILOSC > 0 THEN
+        UPDATE AMUNICJA
+        SET ILOSC = ILOSC - :NEW.ILOSC
+        WHERE AMUNICJAID = v_AmunicjaID;
+    END IF;
+
+    UPDATE PRODUKT
+    SET DOSTEPNOSC = '0'
+    WHERE PRODUKTID = :NEW.PRODUKTID;
+
+EXCEPTION
+    WHEN OTHERS THEN
+        RAISE;
+END;
+/
+
+create trigger TR_TRANSAKCJAPRODUKT_UPDATE
+    after update of ILOSC
+    on TRANSAKCJAPRODUKT
+    for each row
+DECLARE
+    v_AmunicjaID PRODUKT.AMUNICJAID%TYPE;
+BEGIN
+    SELECT AMUNICJAID INTO v_AmunicjaID
+    FROM PRODUKT
+    WHERE PRODUKTID = :NEW.PRODUKTID;
+
+    IF v_AmunicjaID IS NOT NULL THEN
+        IF :NEW.ILOSC < :OLD.ILOSC THEN
+            UPDATE AMUNICJA
+            SET ILOSC = ILOSC + (:OLD.ILOSC - :NEW.ILOSC)
+            WHERE AMUNICJAID = v_AmunicjaID;
+        ELSIF :NEW.ILOSC > :OLD.ILOSC THEN
+            UPDATE AMUNICJA
+            SET ILOSC = ILOSC - (:NEW.ILOSC - :OLD.ILOSC)
+            WHERE AMUNICJAID = v_AmunicjaID;
+        END IF;
+    END IF;
+
+EXCEPTION
+    WHEN OTHERS THEN
+        RAISE;
+END;
+/
+
+create trigger TR_TRANSAKCJAPRODUKT_DELETE
+    after delete
+    on TRANSAKCJAPRODUKT
+    for each row
+DECLARE
+    PRAGMA AUTONOMOUS_TRANSACTION;
+    v_AmunicjaID PRODUKT.AMUNICJAID%TYPE;
+BEGIN
+    UPDATE PRODUKT
+    SET DOSTEPNOSC = '1'
+    WHERE PRODUKTID = :OLD.PRODUKTID;
+
+    SELECT AMUNICJAID INTO v_AmunicjaID
+    FROM PRODUKT
+    WHERE PRODUKTID = :OLD.PRODUKTID;
+
+    IF v_AmunicjaID IS NOT NULL AND :OLD.ILOSC > 0 THEN
+        UPDATE AMUNICJA
+        SET ILOSC = ILOSC + :OLD.ILOSC
+        WHERE AMUNICJAID = v_AmunicjaID;
+    END IF;
+
+    COMMIT;
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        RAISE;
+END;
+/
+
+create table DBTOOLS$EXECUTION_HISTORY
+(
+    ID         NUMBER not null
+        constraint DBTOOLS$EXECUTION_HISTORY_PK
+            primary key,
+    HASH       CLOB,
+    CREATED_BY VARCHAR2(255),
+    CREATED_ON TIMESTAMP(6) WITH TIME ZONE,
+    UPDATED_BY VARCHAR2(255),
+    UPDATED_ON TIMESTAMP(6) WITH TIME ZONE,
+    STATEMENT  CLOB,
+    TIMES      NUMBER
+)
+/
+
+

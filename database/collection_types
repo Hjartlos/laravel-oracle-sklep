@@ -1,0 +1,16 @@
+create type TRANSACTION_STATS_TAB as table of TRANSACTION_STATS_OBJ
+/
+
+create type CITY_STATS_TAB as table of CITY_STATS_OBJ
+/
+
+create type WORKER_STATS_TAB as table of WORKER_STATS_OBJ
+/
+
+create type CLIENT_STATS_TAB as table of CLIENT_STATS_OBJ
+/
+
+create type PRODUCT_STATS_TAB as table of PRODUCT_STATS_OBJ
+/
+
+

@@ -1,0 +1,2342 @@
+create PACKAGE ADRES_PKG AS
+    FUNCTION ADRESREAD RETURN SYS_REFCURSOR;
+
+    FUNCTION ADRESREADBYID(
+        p_AdresID IN ADRES.ADRESID%TYPE
+    ) RETURN SYS_REFCURSOR;
+
+    FUNCTION ADRESREADBYMIASTO(
+        p_Miejscowosc IN ADRES.MIEJSCOWOSC%TYPE
+    ) RETURN SYS_REFCURSOR;
+
+    PROCEDURE ADRESCREATE(
+        p_Ulica IN ADRES.ULICA%TYPE,
+        p_NumerDomu IN ADRES.NUMERDOMU%TYPE,
+        p_NumerMieszkania IN ADRES.NUMERMIESZKANIA%TYPE,
+        p_KodPocztowy IN ADRES.KODPOCZTOWY%TYPE,
+        p_Miejscowosc IN ADRES.MIEJSCOWOSC%TYPE,
+        p_NewAdresID OUT ADRES.ADRESID%TYPE
+    );
+
+    PROCEDURE ADRESUPDATE(
+        p_AdresID IN ADRES.ADRESID%TYPE,
+        p_Ulica IN ADRES.ULICA%TYPE,
+        p_NumerDomu IN ADRES.NUMERDOMU%TYPE,
+        p_NumerMieszkania IN ADRES.NUMERMIESZKANIA%TYPE,
+        p_KodPocztowy IN ADRES.KODPOCZTOWY%TYPE,
+        p_Miejscowosc IN ADRES.MIEJSCOWOSC%TYPE
+    );
+
+    PROCEDURE ADRESDELETE(
+        p_AdresID in ADRES.ADRESID%TYPE
+    );
+END ADRES_PKG;
+/
+
+create PACKAGE BODY ADRES_PKG AS
+    FUNCTION ADRESREAD RETURN SYS_REFCURSOR AS
+        v_cursor SYS_REFCURSOR;
+    BEGIN
+        OPEN v_cursor FOR
+            SELECT * FROM ADRES ORDER BY ADRESID ASC;
+        RETURN v_cursor;
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas pobierania listy adresów: ' || SQLERRM);
+            RETURN NULL;
+    END ADRESREAD;
+
+    FUNCTION ADRESREADBYID(
+        p_AdresID IN ADRES.ADRESID%TYPE
+    ) RETURN SYS_REFCURSOR AS
+        v_cursor SYS_REFCURSOR;
+        v_count NUMBER;
+    BEGIN
+        IF p_AdresID IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20001, 'ID adresu nie może być puste');
+        END IF;
+
+        SELECT COUNT(*)
+        INTO v_count
+        FROM ADRES
+        WHERE ADRESID = p_AdresID;
+
+        IF v_count = 0 THEN
+            RAISE_APPLICATION_ERROR(-20002, 'Adres o podanym ID nie istnieje');
+        END IF;
+
+        OPEN v_cursor FOR
+            SELECT * FROM ADRES WHERE ADRESID = p_AdresID;
+        RETURN v_cursor;
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas pobierania adresu: ' || SQLERRM);
+            RETURN NULL;
+    END ADRESREADBYID;
+
+    FUNCTION ADRESREADBYMIASTO(
+        p_Miejscowosc IN ADRES.MIEJSCOWOSC%TYPE
+    ) RETURN SYS_REFCURSOR AS
+        v_cursor SYS_REFCURSOR;
+    BEGIN
+        IF p_Miejscowosc IS NULL OR LENGTH(TRIM(p_Miejscowosc)) = 0 THEN
+            RAISE_APPLICATION_ERROR(-20001, 'Nazwa miejscowości nie może być pusta');
+        END IF;
+
+        OPEN v_cursor FOR
+            SELECT *
+            FROM ADRES
+            WHERE UPPER(MIEJSCOWOSC) LIKE UPPER('%' || p_Miejscowosc || '%')
+            ORDER BY ADRESID ASC;
+        RETURN v_cursor;
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas wyszukiwania adresów: ' || SQLERRM);
+            RETURN NULL;
+    END ADRESREADBYMIASTO;
+
+    PROCEDURE ADRESCREATE(
+        p_Ulica IN ADRES.ULICA%TYPE,
+        p_NumerDomu IN ADRES.NUMERDOMU%TYPE,
+        p_NumerMieszkania IN ADRES.NUMERMIESZKANIA%TYPE,
+        p_KodPocztowy IN ADRES.KODPOCZTOWY%TYPE,
+        p_Miejscowosc IN ADRES.MIEJSCOWOSC%TYPE,
+        p_NewAdresID OUT ADRES.ADRESID%TYPE
+    ) AS
+        e_invalid_data EXCEPTION;
+        v_kod_pattern VARCHAR2(20) := '^[0-9]{2}-[0-9]{3}$';
+    BEGIN
+        IF p_Ulica IS NULL OR LENGTH(TRIM(p_Ulica)) = 0 THEN
+            RAISE_APPLICATION_ERROR(-20001, 'Nazwa ulicy nie może być pusta');
+        END IF;
+
+        IF p_NumerDomu IS NULL OR LENGTH(TRIM(p_NumerDomu)) = 0 THEN
+            RAISE_APPLICATION_ERROR(-20002, 'Numer domu nie może być pusty');
+        END IF;
+
+        IF NOT REGEXP_LIKE(p_NumerDomu, '[0-9]') THEN
+            RAISE_APPLICATION_ERROR(-20006, 'Numer domu musi zawierać co najmniej jedną cyfrę');
+        END IF;
+
+        IF p_KodPocztowy IS NULL OR LENGTH(TRIM(p_KodPocztowy)) = 0 THEN
+            RAISE_APPLICATION_ERROR(-20003, 'Kod pocztowy nie może być pusty');
+        END IF;
+
+        IF p_Miejscowosc IS NULL OR LENGTH(TRIM(p_Miejscowosc)) = 0 THEN
+            RAISE_APPLICATION_ERROR(-20004, 'Miejscowość nie może być pusta');
+        END IF;
+
+        IF NOT REGEXP_LIKE(p_KodPocztowy, v_kod_pattern) THEN
+            RAISE_APPLICATION_ERROR(-20005, 'Niepoprawny format kodu pocztowego. Wymagany format: XX-XXX');
+        END IF;
+
+        SELECT SQ_AD_ID.NEXTVAL INTO p_NewAdresID FROM DUAL;
+
+        INSERT INTO ADRES (adresid, ulica, numerdomu, numermieszkania, kodpocztowy, miejscowosc)
+        VALUES (p_NewAdresID, p_Ulica, p_NumerDomu, p_NumerMieszkania, p_KodPocztowy, p_Miejscowosc);
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas tworzenia adresu: ' || SQLERRM);
+    END ADRESCREATE;
+
+    PROCEDURE ADRESUPDATE(
+        p_AdresID IN ADRES.ADRESID%TYPE,
+        p_Ulica IN ADRES.ULICA%TYPE,
+        p_NumerDomu IN ADRES.NUMERDOMU%TYPE,
+        p_NumerMieszkania IN ADRES.NUMERMIESZKANIA%TYPE,
+        p_KodPocztowy IN ADRES.KODPOCZTOWY%TYPE,
+        p_Miejscowosc IN ADRES.MIEJSCOWOSC%TYPE
+    ) AS
+        v_Ulica ADRES.ULICA%TYPE;
+        v_NumerDomu ADRES.NUMERDOMU%TYPE;
+        v_NumerMieszkania ADRES.NUMERMIESZKANIA%TYPE;
+        v_KodPocztowy ADRES.KODPOCZTOWY%TYPE;
+        v_Miejscowosc ADRES.MIEJSCOWOSC%TYPE;
+        v_count NUMBER;
+        v_duplicate_count NUMBER;
+        v_kod_pattern VARCHAR2(20) := '^[0-9]{2}-[0-9]{3}$';
+    BEGIN
+        IF p_AdresID IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20001, 'ID adresu nie może być puste');
+        END IF;
+
+        SELECT COUNT(*)
+        INTO v_count
+        FROM ADRES
+        WHERE ADRESID = p_AdresID;
+
+        IF v_count = 0 THEN
+            RAISE_APPLICATION_ERROR(-20002, 'Adres o podanym ID nie istnieje');
+        END IF;
+
+        IF p_NumerDomu IS NOT NULL AND NOT REGEXP_LIKE(p_NumerDomu, '[0-9]') THEN
+            RAISE_APPLICATION_ERROR(-20006, 'Numer domu musi zawierać co najmniej jedną cyfrę');
+        END IF;
+
+        IF p_KodPocztowy IS NOT NULL AND NOT REGEXP_LIKE(p_KodPocztowy, v_kod_pattern) THEN
+            RAISE_APPLICATION_ERROR(-20003, 'Niepoprawny format kodu pocztowego. Wymagany format: XX-XXX');
+        END IF;
+
+        SELECT ULICA, NUMERDOMU, NUMERMIESZKANIA, KODPOCZTOWY, MIEJSCOWOSC
+        INTO v_Ulica, v_NumerDomu, v_NumerMieszkania, v_KodPocztowy, v_Miejscowosc
+        FROM ADRES
+        WHERE ADRESID = p_AdresID;
+
+        SELECT COUNT(*)
+        INTO v_duplicate_count
+        FROM ADRES
+        WHERE ADRESID != p_AdresID
+          AND ULICA = NVL(p_Ulica, v_Ulica)
+          AND NUMERDOMU = NVL(p_NumerDomu, v_NumerDomu)
+          AND NUMERMIESZKANIA = NVL(p_NumerMieszkania, v_NumerMieszkania)
+          AND KODPOCZTOWY = NVL(p_KodPocztowy, v_KodPocztowy)
+          AND MIEJSCOWOSC = NVL(p_Miejscowosc, v_Miejscowosc);
+
+        IF v_duplicate_count > 0 THEN
+            RAISE_APPLICATION_ERROR(-20007, 'Adres o takich parametrach już istnieje');
+        END IF;
+
+        UPDATE ADRES
+        SET
+            ULICA = NVL(p_Ulica, v_Ulica),
+            NUMERDOMU = NVL(p_NumerDomu, v_NumerDomu),
+            NUMERMIESZKANIA = NVL(p_NumerMieszkania, v_NumerMieszkania),
+            KODPOCZTOWY = NVL(p_KodPocztowy, v_KodPocztowy),
+            MIEJSCOWOSC = NVL(p_Miejscowosc, v_Miejscowosc)
+        WHERE ADRESID = p_AdresID;
+
+        IF SQL%ROWCOUNT = 0 THEN
+            RAISE_APPLICATION_ERROR(-20004, 'Aktualizacja adresu nie powiodła się');
+        END IF;
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas aktualizacji adresu: ' || SQLERRM);
+    END ADRESUPDATE;
+
+    PROCEDURE ADRESDELETE(
+        p_AdresID in ADRES.ADRESID%TYPE
+    ) AS
+        v_count NUMBER;
+        v_klient_count NUMBER := 0;
+        v_pracownik_count NUMBER := 0;
+    BEGIN
+        IF p_AdresID IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20001, 'ID adresu nie może być puste');
+        END IF;
+
+        SELECT COUNT(*)
+        INTO v_count
+        FROM ADRES
+        WHERE ADRESID = p_AdresID;
+
+        IF v_count = 0 THEN
+            RAISE_APPLICATION_ERROR(-20002, 'Adres o podanym ID nie istnieje');
+        END IF;
+
+        SELECT COUNT(*)
+        INTO v_klient_count
+        FROM KLIENT
+        WHERE ADRESID = p_AdresID;
+
+        SELECT COUNT(*)
+        INTO v_pracownik_count
+        FROM PRACOWNIK
+        WHERE ADRESID = p_AdresID;
+
+        IF v_klient_count > 0 THEN
+            RAISE_APPLICATION_ERROR(-20003, 'Nie można usunąć adresu - jest powiązany z klientem');
+        END IF;
+
+        IF v_pracownik_count > 0 THEN
+            RAISE_APPLICATION_ERROR(-20004, 'Nie można usunąć adresu - jest powiązany z pracownikiem');
+        END IF;
+
+        DELETE FROM ADRES WHERE adresid = p_AdresID;
+
+        IF SQL%ROWCOUNT = 0 THEN
+            RAISE_APPLICATION_ERROR(-20005, 'Usunięcie adresu nie powiodło się');
+        END IF;
+
+        
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas przetwarzania adresu: ' || SQLERRM);
+    END ADRESDELETE;
+END ADRES_PKG;
+/
+
+create PACKAGE AMMO_PKG AS
+    FUNCTION AMMOREAD RETURN SYS_REFCURSOR;
+
+    FUNCTION AMMOREADBYID(
+        p_AmunicjaID IN AMUNICJA.AMUNICJAID%TYPE
+    ) RETURN SYS_REFCURSOR;
+
+    FUNCTION AMMOREADBYNAZWA(
+        p_Nazwa IN AMUNICJA.NAZWA%TYPE
+    ) RETURN SYS_REFCURSOR;
+
+    PROCEDURE AMMOCREATE(
+        p_Nazwa IN AMUNICJA.NAZWA%TYPE,
+        p_Cena IN AMUNICJA.CENA%TYPE,
+        p_Ilosc IN AMUNICJA.ILOSC%TYPE,
+        p_NewID OUT AMUNICJA.AMUNICJAID%TYPE
+    );
+
+    PROCEDURE AMMOUPDATE(
+        p_AmunicjaID IN AMUNICJA.AMUNICJAID%TYPE,
+        p_Nazwa IN AMUNICJA.NAZWA%TYPE,
+        p_Cena IN AMUNICJA.CENA%TYPE,
+        p_Ilosc IN AMUNICJA.ILOSC%TYPE
+    );
+
+    PROCEDURE AMMODELETE(
+        p_AmunicjaID IN AMUNICJA.AMUNICJAID%TYPE
+    );
+END AMMO_PKG;
+/
+
+create PACKAGE BODY AMMO_PKG AS
+    FUNCTION AMMOREAD RETURN SYS_REFCURSOR AS
+        v_cursor SYS_REFCURSOR;
+    BEGIN
+        OPEN v_cursor FOR
+            SELECT * FROM AMUNICJA ORDER BY AMUNICJAID ASC;
+        RETURN v_cursor;
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas pobierania listy amunicji: ' || SQLERRM);
+            RETURN NULL;
+    END AMMOREAD;
+
+    FUNCTION AMMOREADBYID(
+        p_AmunicjaID IN AMUNICJA.AMUNICJAID%TYPE
+    ) RETURN SYS_REFCURSOR AS
+        v_cursor SYS_REFCURSOR;
+        v_count NUMBER;
+    BEGIN
+        IF p_AmunicjaID IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20001, 'ID amunicji nie może być puste');
+        END IF;
+
+        SELECT COUNT(*)
+        INTO v_count
+        FROM AMUNICJA
+        WHERE AMUNICJAID = p_AmunicjaID;
+
+        IF v_count = 0 THEN
+            RAISE_APPLICATION_ERROR(-20002, 'Amunicja o podanym ID nie istnieje');
+        END IF;
+
+        OPEN v_cursor FOR
+            SELECT *
+            FROM AMUNICJA
+            WHERE AMUNICJAID = p_AmunicjaID;
+
+        RETURN v_cursor;
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas pobierania danych amunicji: ' || SQLERRM);
+            RETURN NULL;
+    END AMMOREADBYID;
+
+    FUNCTION AMMOREADBYNAZWA(
+        p_Nazwa IN AMUNICJA.NAZWA%TYPE
+    ) RETURN SYS_REFCURSOR AS
+        v_cursor SYS_REFCURSOR;
+    BEGIN
+        IF p_Nazwa IS NULL OR LENGTH(TRIM(p_Nazwa)) = 0 THEN
+            RAISE_APPLICATION_ERROR(-20001, 'Nazwa do wyszukania nie może być pusta');
+        END IF;
+
+        OPEN v_cursor FOR
+            SELECT *
+            FROM AMUNICJA
+            WHERE UPPER(NAZWA) LIKE UPPER('%' || p_Nazwa || '%')
+            ORDER BY AMUNICJAID ASC;
+
+        RETURN v_cursor;
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas wyszukiwania amunicji: ' || SQLERRM);
+            RETURN NULL;
+    END AMMOREADBYNAZWA;
+
+    PROCEDURE AMMOCREATE(
+        p_Nazwa IN AMUNICJA.NAZWA%TYPE,
+        p_Cena IN AMUNICJA.CENA%TYPE,
+        p_Ilosc IN AMUNICJA.ILOSC%TYPE,
+        p_NewID OUT AMUNICJA.AMUNICJAID%TYPE
+    ) AS
+        v_count NUMBER;
+    BEGIN
+        IF p_Nazwa IS NULL OR LENGTH(TRIM(p_Nazwa)) = 0 THEN
+            RAISE_APPLICATION_ERROR(-20001, 'Nazwa amunicji nie może być pusta');
+        END IF;
+
+        IF p_Cena IS NULL OR p_Cena <= 0 THEN
+            RAISE_APPLICATION_ERROR(-20002, 'Cena musi być większa od zera');
+        END IF;
+
+        IF p_Ilosc IS NULL OR p_Ilosc < 0 THEN
+            RAISE_APPLICATION_ERROR(-20003, 'Ilość nie może być ujemna');
+        END IF;
+
+        SELECT COUNT(*) INTO v_count FROM AMUNICJA WHERE UPPER(NAZWA) = UPPER(p_Nazwa);
+        IF v_count > 0 THEN
+            RAISE_APPLICATION_ERROR(-20004, 'Amunicja o podanej nazwie już istnieje');
+        END IF;
+
+        SELECT SQ_AM_ID.NEXTVAL INTO p_NewID FROM DUAL;
+
+        INSERT INTO AMUNICJA (AMUNICJAID, NAZWA, CENA, ILOSC)
+        VALUES (p_NewID, p_Nazwa, p_Cena, p_Ilosc);
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas dodawania amunicji: ' || SQLERRM);
+    END AMMOCREATE;
+
+    PROCEDURE AMMOUPDATE(
+        p_AmunicjaID IN AMUNICJA.AMUNICJAID%TYPE,
+        p_Nazwa IN AMUNICJA.NAZWA%TYPE,
+        p_Cena IN AMUNICJA.CENA%TYPE,
+        p_Ilosc IN AMUNICJA.ILOSC%TYPE
+    ) AS
+        v_Nazwa AMUNICJA.NAZWA%TYPE;
+        v_Cena AMUNICJA.CENA%TYPE;
+        v_Ilosc AMUNICJA.ILOSC%TYPE;
+        v_count NUMBER;
+        v_duplicate_count NUMBER;
+    BEGIN
+        IF p_AmunicjaID IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20001, 'ID amunicji nie może być puste');
+        END IF;
+
+        SELECT COUNT(*) INTO v_count FROM AMUNICJA WHERE AMUNICJAID = p_AmunicjaID;
+        IF v_count = 0 THEN
+            RAISE_APPLICATION_ERROR(-20002, 'Amunicja o podanym ID nie istnieje');
+        END IF;
+
+        SELECT NAZWA, CENA, ILOSC
+        INTO v_Nazwa, v_Cena, v_Ilosc
+        FROM AMUNICJA
+        WHERE AMUNICJAID = p_AmunicjaID;
+
+        IF p_Cena IS NOT NULL AND p_Cena <= 0 THEN
+            RAISE_APPLICATION_ERROR(-20003, 'Cena musi być większa od zera');
+        END IF;
+
+        IF p_Ilosc IS NOT NULL AND p_Ilosc < 0 THEN
+            RAISE_APPLICATION_ERROR(-20004, 'Ilość nie może być ujemna');
+        END IF;
+
+        IF p_Nazwa IS NOT NULL AND p_Nazwa != v_Nazwa THEN
+            SELECT COUNT(*) INTO v_duplicate_count
+            FROM AMUNICJA
+            WHERE UPPER(NAZWA) = UPPER(p_Nazwa) AND AMUNICJAID != p_AmunicjaID;
+
+            IF v_duplicate_count > 0 THEN
+                RAISE_APPLICATION_ERROR(-20005, 'Amunicja o podanej nazwie już istnieje');
+            END IF;
+        END IF;
+
+        UPDATE AMUNICJA
+        SET NAZWA = NVL(p_Nazwa, v_Nazwa),
+            CENA = NVL(p_Cena, v_Cena),
+            ILOSC = NVL(p_Ilosc, v_Ilosc)
+        WHERE AMUNICJAID = p_AmunicjaID;
+
+        IF SQL%ROWCOUNT = 0 THEN
+            RAISE_APPLICATION_ERROR(-20006, 'Aktualizacja amunicji nie powiodła się');
+        END IF;
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas aktualizacji amunicji: ' || SQLERRM);
+    END AMMOUPDATE;
+
+    PROCEDURE AMMODELETE(
+        p_AmunicjaID IN AMUNICJA.AMUNICJAID%TYPE
+    ) AS
+        v_count NUMBER;
+    BEGIN
+        IF p_AmunicjaID IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20001, 'ID amunicji nie może być puste');
+        END IF;
+
+        SELECT COUNT(*) INTO v_count FROM AMUNICJA WHERE AMUNICJAID = p_AmunicjaID;
+        IF v_count = 0 THEN
+            RAISE_APPLICATION_ERROR(-20002, 'Amunicja o podanym ID nie istnieje');
+        END IF;
+
+        DELETE FROM AMUNICJA WHERE AMUNICJAID = p_AmunicjaID;
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            IF SQLCODE = -20004 THEN
+                NULL;
+            ELSE
+                RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas aktualizacji ilości amunicji: ' || SQLERRM);
+            END IF;
+    END AMMODELETE;
+END AMMO_PKG;
+/
+
+create PACKAGE KATEGORIA_PKG AS
+    FUNCTION KATEGORIAREAD RETURN SYS_REFCURSOR;
+
+    FUNCTION KATEGORIAREADBYID(
+        p_KategoriaID IN KATEGORIAPRODUKTOW.KATEGORIAID%TYPE
+    ) RETURN SYS_REFCURSOR;
+
+    FUNCTION KATEGORIAREADBYUPRAWNIENIA(
+        p_Uprawnienia IN KATEGORIAPRODUKTOW.WYMAGANEUPRAWNIENIA%TYPE
+    ) RETURN SYS_REFCURSOR;
+
+    PROCEDURE KATEGORIACREATE(
+        p_Nazwa IN KATEGORIAPRODUKTOW.NAZWAKATEGORII%TYPE,
+        p_Opis IN KATEGORIAPRODUKTOW.OPIS%TYPE,
+        p_Wymagane IN KATEGORIAPRODUKTOW.WYMAGANEUPRAWNIENIA%TYPE,
+        p_NewID OUT KATEGORIAPRODUKTOW.KATEGORIAID%TYPE
+    );
+
+    PROCEDURE KATEGORIAUPDATE(
+        p_KategoriaID IN KATEGORIAPRODUKTOW.KATEGORIAID%TYPE,
+        p_Nazwa IN KATEGORIAPRODUKTOW.NAZWAKATEGORII%TYPE,
+        p_Opis IN KATEGORIAPRODUKTOW.OPIS%TYPE,
+        p_Wymagane IN KATEGORIAPRODUKTOW.WYMAGANEUPRAWNIENIA%TYPE
+    );
+
+    PROCEDURE KATEGORIADELETE(
+        p_KategoriaID IN KATEGORIAPRODUKTOW.KATEGORIAID%TYPE
+    );
+END KATEGORIA_PKG;
+/
+
+create PACKAGE BODY KATEGORIA_PKG AS
+    FUNCTION KATEGORIAREAD RETURN SYS_REFCURSOR AS
+        v_cursor SYS_REFCURSOR;
+    BEGIN
+        OPEN v_cursor FOR
+            SELECT * FROM KATEGORIAPRODUKTOW ORDER BY KATEGORIAID;
+        RETURN v_cursor;
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas pobierania listy kategorii: ' || SQLERRM);
+            RETURN NULL;
+    END KATEGORIAREAD;
+
+    FUNCTION KATEGORIAREADBYID(
+        p_KategoriaID IN KATEGORIAPRODUKTOW.KATEGORIAID%TYPE
+    ) RETURN SYS_REFCURSOR AS
+        v_cursor SYS_REFCURSOR;
+        v_count NUMBER;
+    BEGIN
+        IF p_KategoriaID IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20001, 'ID kategorii nie może być puste');
+        END IF;
+
+        SELECT COUNT(*) INTO v_count FROM KATEGORIAPRODUKTOW WHERE KATEGORIAID = p_KategoriaID;
+        IF v_count = 0 THEN
+            RAISE_APPLICATION_ERROR(-20002, 'Kategoria o podanym ID nie istnieje');
+        END IF;
+
+        OPEN v_cursor FOR
+            SELECT * FROM KATEGORIAPRODUKTOW WHERE KATEGORIAID = p_KategoriaID;
+
+        RETURN v_cursor;
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas pobierania kategorii: ' || SQLERRM);
+            RETURN NULL;
+    END KATEGORIAREADBYID;
+
+    FUNCTION KATEGORIAREADBYUPRAWNIENIA(
+        p_Uprawnienia IN KATEGORIAPRODUKTOW.WYMAGANEUPRAWNIENIA%TYPE
+    ) RETURN SYS_REFCURSOR AS
+        v_cursor SYS_REFCURSOR;
+    BEGIN
+        IF p_Uprawnienia IS NULL OR LENGTH(TRIM(p_Uprawnienia)) = 0 THEN
+            RAISE_APPLICATION_ERROR(-20001, 'Nazwa do wyszukania nie może być pusta');
+        END IF;
+
+        OPEN v_cursor FOR
+            SELECT * FROM KATEGORIAPRODUKTOW
+            WHERE UPPER(WYMAGANEUPRAWNIENIA) LIKE UPPER('%' || p_Uprawnienia || '%');
+
+        RETURN v_cursor;
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas wyszukiwania kategorii: ' || SQLERRM);
+            RETURN NULL;
+    END KATEGORIAREADBYUPRAWNIENIA;
+
+    PROCEDURE KATEGORIACREATE(
+        p_Nazwa IN KATEGORIAPRODUKTOW.NAZWAKATEGORII%TYPE,
+        p_Opis IN KATEGORIAPRODUKTOW.OPIS%TYPE,
+        p_Wymagane IN KATEGORIAPRODUKTOW.WYMAGANEUPRAWNIENIA%TYPE,
+        p_NewID OUT KATEGORIAPRODUKTOW.KATEGORIAID%TYPE
+    ) AS
+        v_count NUMBER;
+    BEGIN
+        IF p_Nazwa IS NULL OR LENGTH(TRIM(p_Nazwa)) = 0 THEN
+            RAISE_APPLICATION_ERROR(-20001, 'Nazwa kategorii nie może być pusta');
+        END IF;
+
+        SELECT COUNT(*) INTO v_count FROM KATEGORIAPRODUKTOW WHERE UPPER(NAZWAKATEGORII) = UPPER(p_Nazwa);
+        IF v_count > 0 THEN
+            RAISE_APPLICATION_ERROR(-20002, 'Kategoria o podanej nazwie już istnieje');
+        END IF;
+
+        IF p_Wymagane IS NOT NULL AND p_Wymagane NOT IN ('A', 'B', 'C') THEN
+            RAISE_APPLICATION_ERROR(-20003, 'Nieprawidłowy typ wymaganych uprawnień. Dopuszczalne wartości to: A, B, C');
+        END IF;
+
+        SELECT SQ_KP_ID.NEXTVAL INTO p_NewID FROM DUAL;
+
+        INSERT INTO KATEGORIAPRODUKTOW (KATEGORIAID, NAZWAKATEGORII, OPIS, WYMAGANEUPRAWNIENIA)
+        VALUES (p_NewID, p_Nazwa, p_Opis, p_Wymagane);
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas tworzenia kategorii: ' || SQLERRM);
+    END KATEGORIACREATE;
+
+    PROCEDURE KATEGORIAUPDATE(
+        p_KategoriaID IN KATEGORIAPRODUKTOW.KATEGORIAID%TYPE,
+        p_Nazwa IN KATEGORIAPRODUKTOW.NAZWAKATEGORII%TYPE,
+        p_Opis IN KATEGORIAPRODUKTOW.OPIS%TYPE,
+        p_Wymagane IN KATEGORIAPRODUKTOW.WYMAGANEUPRAWNIENIA%TYPE
+    ) AS
+        v_Nazwa KATEGORIAPRODUKTOW.NAZWAKATEGORII%TYPE;
+        v_Opis KATEGORIAPRODUKTOW.OPIS%TYPE;
+        v_Wymagane KATEGORIAPRODUKTOW.WYMAGANEUPRAWNIENIA%TYPE;
+        v_count NUMBER;
+    BEGIN
+        IF p_KategoriaID IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20001, 'ID kategorii nie może być puste');
+        END IF;
+
+        SELECT COUNT(*) INTO v_count FROM KATEGORIAPRODUKTOW WHERE KATEGORIAID = p_KategoriaID;
+        IF v_count = 0 THEN
+            RAISE_APPLICATION_ERROR(-20002, 'Kategoria o podanym ID nie istnieje');
+        END IF;
+
+        IF p_Wymagane IS NOT NULL AND p_Wymagane NOT IN ('A', 'B', 'C') THEN
+            RAISE_APPLICATION_ERROR(-20003, 'Nieprawidłowy typ wymaganych uprawnień. Dopuszczalne wartości to: A, B, C');
+        END IF;
+
+        IF p_Nazwa IS NOT NULL THEN
+            SELECT COUNT(*) INTO v_count
+            FROM KATEGORIAPRODUKTOW
+            WHERE UPPER(NAZWAKATEGORII) = UPPER(p_Nazwa) AND KATEGORIAID != p_KategoriaID;
+
+            IF v_count > 0 THEN
+                RAISE_APPLICATION_ERROR(-20004, 'Kategoria o podanej nazwie już istnieje');
+            END IF;
+        END IF;
+
+        SELECT NAZWAKATEGORII, OPIS, WYMAGANEUPRAWNIENIA
+        INTO v_Nazwa, v_Opis, v_Wymagane
+        FROM KATEGORIAPRODUKTOW
+        WHERE KATEGORIAID = p_KategoriaID;
+
+        UPDATE KATEGORIAPRODUKTOW
+        SET NAZWAKATEGORII = NVL(p_Nazwa, v_Nazwa),
+            OPIS = NVL(p_Opis, v_Opis),
+            WYMAGANEUPRAWNIENIA = NVL(p_Wymagane, v_Wymagane)
+        WHERE KATEGORIAID = p_KategoriaID;
+
+        IF SQL%ROWCOUNT = 0 THEN
+            RAISE_APPLICATION_ERROR(-20005, 'Aktualizacja kategorii nie powiodła się');
+        END IF;
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas aktualizacji kategorii: ' || SQLERRM);
+    END KATEGORIAUPDATE;
+
+    PROCEDURE KATEGORIADELETE(
+        p_KategoriaID IN KATEGORIAPRODUKTOW.KATEGORIAID%TYPE
+    ) AS
+        v_count NUMBER;
+    BEGIN
+        IF p_KategoriaID IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20001, 'ID kategorii nie może być puste');
+        END IF;
+
+        SELECT COUNT(*) INTO v_count FROM KATEGORIAPRODUKTOW WHERE KATEGORIAID = p_KategoriaID;
+        IF v_count = 0 THEN
+            RAISE_APPLICATION_ERROR(-20002, 'Kategoria o podanym ID nie istnieje');
+        END IF;
+
+        SELECT COUNT(*) INTO v_count
+        FROM PRODUKT
+        WHERE KATEGORIAID = p_KategoriaID;
+
+        IF v_count > 0 THEN
+            RAISE_APPLICATION_ERROR(-20003, 'Nie można usunąć kategorii, która jest przypisana do produktów');
+        END IF;
+
+        DELETE FROM KATEGORIAPRODUKTOW WHERE KATEGORIAID = p_KategoriaID;
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas usuwania kategorii: ' || SQLERRM);
+    END KATEGORIADELETE;
+END KATEGORIA_PKG;
+/
+
+create PACKAGE KLIENT_PKG AS
+    FUNCTION KLIENTREAD RETURN SYS_REFCURSOR;
+
+    FUNCTION KLIENTREADBYID(
+        p_KlientId IN KLIENT.KLIENTID%TYPE
+    ) RETURN SYS_REFCURSOR;
+
+    FUNCTION KLIENTREADACTIVE RETURN SYS_REFCURSOR;
+
+    PROCEDURE KLIENTCREATE(
+        p_Imie IN KLIENT.IMIE%TYPE,
+        p_Nazwisko IN KLIENT.NAZWISKO%TYPE,
+        p_NumerPozwolenia IN KLIENT.NUMERPOZWOLENIA%TYPE,
+        p_TypPozwolenia IN KLIENT.TYPPOZWOLENIA%TYPE,
+        p_DataWaznosci IN KLIENT.DATAWAZNOSCIPOZWOLENIA%TYPE,
+        p_Email IN KLIENT.EMAIL%TYPE,
+        p_Telefon IN KLIENT.TELEFON%TYPE,
+        p_Ulica IN ADRES.ULICA%TYPE,
+        p_NumerDomu IN ADRES.NUMERDOMU%TYPE,
+        p_NumerMieszkania IN ADRES.NUMERMIESZKANIA%TYPE,
+        p_KodPocztowy IN ADRES.KODPOCZTOWY%TYPE,
+        p_Miejscowosc IN ADRES.MIEJSCOWOSC%TYPE
+    );
+
+    PROCEDURE KLIENTUPDATE(
+        p_KlientID IN KLIENT.KLIENTID%TYPE,
+        p_Imie IN KLIENT.IMIE%TYPE,
+        p_Nazwisko IN KLIENT.NAZWISKO%TYPE,
+        p_NumerPozwolenia IN KLIENT.NUMERPOZWOLENIA%TYPE,
+        p_TypPozwolenia IN KLIENT.TYPPOZWOLENIA%TYPE,
+        p_DataWaznosciPozwolenia IN KLIENT.DATAWAZNOSCIPOZWOLENIA%TYPE,
+        p_Email IN KLIENT.EMAIL%TYPE,
+        p_Telefon IN KLIENT.TELEFON%TYPE,
+        p_StatusAktywnosci IN KLIENT.STATUSAKTYWNOSCI%TYPE,
+        p_Ulica IN ADRES.ULICA%TYPE,
+        p_NumerDomu IN ADRES.NUMERDOMU%TYPE,
+        p_NumerMieszkania IN ADRES.NUMERMIESZKANIA%TYPE,
+        p_KodPocztowy IN ADRES.KODPOCZTOWY%TYPE,
+        p_Miejscowosc IN ADRES.MIEJSCOWOSC%TYPE
+    );
+
+    PROCEDURE KLIENTDELETE(
+        p_KlientID IN KLIENT.KLIENTID%TYPE
+    );
+END KLIENT_PKG;
+/
+
+create PACKAGE BODY KLIENT_PKG AS
+    FUNCTION KLIENTREAD
+        RETURN SYS_REFCURSOR AS
+        v_cursor SYS_REFCURSOR;
+    BEGIN
+        OPEN v_cursor FOR
+            SELECT * FROM KLIENT ORDER BY KLIENTID;
+        RETURN v_cursor;
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas pobierania listy klientów: ' || SQLERRM);
+            RETURN NULL;
+    END KLIENTREAD;
+
+    FUNCTION KLIENTREADBYID(
+        p_KlientId IN KLIENT.KLIENTID%TYPE
+    ) RETURN SYS_REFCURSOR AS
+        v_cursor SYS_REFCURSOR;
+        v_count NUMBER;
+    BEGIN
+        IF p_KlientId IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20001, 'ID klienta nie może być puste');
+        END IF;
+
+        SELECT COUNT(*) INTO v_count FROM KLIENT WHERE KLIENTID = p_KlientId;
+        IF v_count = 0 THEN
+            RAISE_APPLICATION_ERROR(-20002, 'Klient o podanym ID nie istnieje');
+        END IF;
+
+        OPEN v_cursor FOR
+            SELECT * FROM KLIENT WHERE KLIENTID = p_KlientId;
+        RETURN v_cursor;
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas pobierania danych klienta: ' || SQLERRM);
+            RETURN NULL;
+    END KLIENTREADBYID;
+
+    FUNCTION KLIENTREADACTIVE
+        RETURN SYS_REFCURSOR AS
+        v_cursor SYS_REFCURSOR;
+    BEGIN
+        OPEN v_cursor FOR
+            SELECT k.*,
+                   a.ULICA,
+                   a.NUMERDOMU,
+                   a.NUMERMIESZKANIA,
+                   a.KODPOCZTOWY,
+                   a.MIEJSCOWOSC
+            FROM KLIENT k
+                     LEFT JOIN ADRES a ON k.ADRESID = a.ADRESID
+            WHERE k.STATUSAKTYWNOSCI = '1'
+            ORDER BY k.NAZWISKO, k.IMIE;
+
+        RETURN v_cursor;
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas pobierania aktywnych klientów: ' || SQLERRM);
+            RETURN NULL;
+    END KLIENTREADACTIVE;
+
+    PROCEDURE KLIENTCREATE(
+        p_Imie IN KLIENT.IMIE%TYPE,
+        p_Nazwisko IN KLIENT.NAZWISKO%TYPE,
+        p_NumerPozwolenia IN KLIENT.NUMERPOZWOLENIA%TYPE,
+        p_TypPozwolenia IN KLIENT.TYPPOZWOLENIA%TYPE,
+        p_DataWaznosci IN KLIENT.DATAWAZNOSCIPOZWOLENIA%TYPE,
+        p_Email IN KLIENT.EMAIL%TYPE,
+        p_Telefon IN KLIENT.TELEFON%TYPE,
+        p_Ulica IN ADRES.ULICA%TYPE,
+        p_NumerDomu IN ADRES.NUMERDOMU%TYPE,
+        p_NumerMieszkania IN ADRES.NUMERMIESZKANIA%TYPE,
+        p_KodPocztowy IN ADRES.KODPOCZTOWY%TYPE,
+        p_Miejscowosc IN ADRES.MIEJSCOWOSC%TYPE
+    ) AS
+        v_KlientID NUMBER;
+        v_AdresID NUMBER;
+        c_wzorzec_email CONSTANT VARCHAR2(100) := '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$';
+    BEGIN
+        IF p_Imie IS NULL OR LENGTH(TRIM(p_Imie)) = 0 THEN
+            RAISE_APPLICATION_ERROR(-20001, 'Imię klienta nie może być puste');
+        END IF;
+
+        IF p_Nazwisko IS NULL OR LENGTH(TRIM(p_Nazwisko)) = 0 THEN
+            RAISE_APPLICATION_ERROR(-20002, 'Nazwisko klienta nie może być puste');
+        END IF;
+
+        IF p_NumerPozwolenia IS NULL OR LENGTH(TRIM(p_NumerPozwolenia)) = 0 THEN
+            RAISE_APPLICATION_ERROR(-20003, 'Numer pozwolenia nie może być pusty');
+        END IF;
+
+        IF p_TypPozwolenia IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20004, 'Typ pozwolenia nie może być pusty');
+        END IF;
+
+        IF p_TypPozwolenia NOT IN ('A', 'B', 'C') THEN
+            RAISE_APPLICATION_ERROR(-20005, 'Nieprawidłowy typ pozwolenia. Dozwolone wartości to: A, B, C');
+        END IF;
+
+        IF p_DataWaznosci IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20006, 'Data ważności pozwolenia nie może być pusta');
+        END IF;
+
+        IF TRUNC(p_DataWaznosci) < TRUNC(SYSDATE) THEN
+            RAISE_APPLICATION_ERROR(-20007, 'Data ważności pozwolenia nie może być z przeszłości');
+        END IF;
+
+        IF p_Email IS NOT NULL AND NOT REGEXP_LIKE(p_Email, c_wzorzec_email) THEN
+            RAISE_APPLICATION_ERROR(-20008, 'Nieprawidłowy format adresu email');
+        END IF;
+
+        IF p_Telefon IS NULL OR LENGTH(TRIM(p_Telefon)) = 0 THEN
+            RAISE_APPLICATION_ERROR(-20009, 'Numer telefonu nie może być pusty');
+        END IF;
+
+        BEGIN
+            ADRES_PKG.AdresCreate(
+                    p_Ulica => p_Ulica,
+                    p_NumerDomu => p_NumerDomu,
+                    p_NumerMieszkania => p_NumerMieszkania,
+                    p_KodPocztowy => p_KodPocztowy,
+                    p_Miejscowosc => p_Miejscowosc,
+                    p_NewAdresID => v_AdresID
+            );
+        EXCEPTION
+            WHEN OTHERS THEN
+                RAISE_APPLICATION_ERROR(-20012, 'Błąd podczas tworzenia adresu: ' || SQLERRM);
+        END;
+
+        SELECT SQ_KL_ID.NEXTVAL INTO v_KlientID FROM DUAL;
+
+        BEGIN
+            INSERT INTO KLIENT (
+                KLIENTID, IMIE, NAZWISKO, NUMERPOZWOLENIA, TYPPOZWOLENIA, DATAWAZNOSCIPOZWOLENIA,
+                ADRESID, EMAIL, TELEFON, STATUSAKTYWNOSCI
+            ) VALUES (
+                         v_KlientID, p_Imie, p_Nazwisko, p_NumerPozwolenia, p_TypPozwolenia, p_DataWaznosci,
+                         v_AdresID, p_Email, p_Telefon, '1'
+                     );
+        EXCEPTION
+            WHEN DUP_VAL_ON_INDEX THEN
+                IF v_AdresID IS NOT NULL THEN
+                    DELETE FROM ADRES WHERE ADRESID = v_AdresID;
+                END IF;
+                RAISE_APPLICATION_ERROR(-20013, 'Klient z takimi danymi już istnieje');
+            WHEN OTHERS THEN
+                IF v_AdresID IS NOT NULL THEN
+                    DELETE FROM ADRES WHERE ADRESID = v_AdresID;
+                END IF;
+                RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas tworzenia klienta: ' || SQLERRM);
+        END;
+    END KLIENTCREATE;
+
+    PROCEDURE KLIENTUPDATE(
+        p_KlientID IN KLIENT.KLIENTID%TYPE,
+        p_Imie IN KLIENT.IMIE%TYPE,
+        p_Nazwisko IN KLIENT.NAZWISKO%TYPE,
+        p_NumerPozwolenia IN KLIENT.NUMERPOZWOLENIA%TYPE,
+        p_TypPozwolenia IN KLIENT.TYPPOZWOLENIA%TYPE,
+        p_DataWaznosciPozwolenia IN KLIENT.DATAWAZNOSCIPOZWOLENIA%TYPE,
+        p_Email IN KLIENT.EMAIL%TYPE,
+        p_Telefon IN KLIENT.TELEFON%TYPE,
+        p_StatusAktywnosci IN KLIENT.STATUSAKTYWNOSCI%TYPE,
+        p_Ulica IN ADRES.ULICA%TYPE,
+        p_NumerDomu IN ADRES.NUMERDOMU%TYPE,
+        p_NumerMieszkania IN ADRES.NUMERMIESZKANIA%TYPE,
+        p_KodPocztowy IN ADRES.KODPOCZTOWY%TYPE,
+        p_Miejscowosc IN ADRES.MIEJSCOWOSC%TYPE
+    ) AS
+        v_Imie KLIENT.IMIE%TYPE;
+        v_Nazwisko KLIENT.NAZWISKO%TYPE;
+        v_NumerPozwolenia KLIENT.NUMERPOZWOLENIA%TYPE;
+        v_TypPozwolenia KLIENT.TYPPOZWOLENIA%TYPE;
+        v_DataWaznosciPozwolenia KLIENT.DATAWAZNOSCIPOZWOLENIA%TYPE;
+        v_Email KLIENT.EMAIL%TYPE;
+        v_Telefon KLIENT.TELEFON%TYPE;
+        v_StatusAktywnosci KLIENT.STATUSAKTYWNOSCI%TYPE;
+        v_AdresID KLIENT.ADRESID%TYPE;
+        v_count NUMBER;
+        c_wzorzec_email CONSTANT VARCHAR2(100) := '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$';
+    BEGIN
+        IF p_KlientID IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20001, 'ID klienta nie może być puste');
+        END IF;
+
+        SELECT COUNT(*) INTO v_count FROM KLIENT WHERE KLIENTID = p_KlientID;
+        IF v_count = 0 THEN
+            RAISE_APPLICATION_ERROR(-20002, 'Klient o podanym ID nie istnieje');
+        END IF;
+
+        IF p_TypPozwolenia IS NOT NULL AND p_TypPozwolenia NOT IN ('A', 'B', 'C') THEN
+            RAISE_APPLICATION_ERROR(-20005, 'Nieprawidłowy typ pozwolenia. Dozwolone wartości to: A, B, C');
+        END IF;
+
+        IF p_DataWaznosciPozwolenia IS NOT NULL AND TRUNC(p_DataWaznosciPozwolenia) < TRUNC(SYSDATE) THEN
+            RAISE_APPLICATION_ERROR(-20007, 'Data ważności pozwolenia nie może być z przeszłości');
+        END IF;
+
+        IF p_Email IS NOT NULL AND NOT REGEXP_LIKE(p_Email, c_wzorzec_email) THEN
+            RAISE_APPLICATION_ERROR(-20008, 'Nieprawidłowy format adresu email');
+        END IF;
+
+        IF p_StatusAktywnosci IS NOT NULL AND p_StatusAktywnosci NOT IN ('0', '1') THEN
+            RAISE_APPLICATION_ERROR(-20011, 'Status aktywności musi mieć wartość ''0'' (nieaktywny) lub ''1'' (aktywny)');
+        END IF;
+
+        SELECT IMIE, NAZWISKO, NUMERPOZWOLENIA, TYPPOZWOLENIA,
+               DATAWAZNOSCIPOZWOLENIA, EMAIL, TELEFON, STATUSAKTYWNOSCI, ADRESID
+        INTO v_Imie, v_Nazwisko, v_NumerPozwolenia, v_TypPozwolenia,
+            v_DataWaznosciPozwolenia, v_Email, v_Telefon, v_StatusAktywnosci, v_AdresID
+        FROM KLIENT
+        WHERE KLIENTID = p_KlientID;
+
+        UPDATE KLIENT
+        SET IMIE = NVL(p_Imie, v_Imie),
+            NAZWISKO = NVL(p_Nazwisko, v_Nazwisko),
+            NUMERPOZWOLENIA = NVL(p_NumerPozwolenia, v_NumerPozwolenia),
+            TYPPOZWOLENIA = NVL(p_TypPozwolenia, v_TypPozwolenia),
+            DATAWAZNOSCIPOZWOLENIA = NVL(p_DataWaznosciPozwolenia, v_DataWaznosciPozwolenia),
+            EMAIL = NVL(p_Email, v_Email),
+            TELEFON = NVL(p_Telefon, v_Telefon),
+            STATUSAKTYWNOSCI = NVL(p_StatusAktywnosci, v_StatusAktywnosci)
+        WHERE KLIENTID = p_KlientID;
+
+        IF p_Ulica IS NOT NULL OR p_NumerDomu IS NOT NULL OR p_NumerMieszkania IS NOT NULL OR
+           p_KodPocztowy IS NOT NULL OR p_Miejscowosc IS NOT NULL THEN
+            BEGIN
+                ADRES_PKG.ADRESUPDATE(
+                        v_AdresID,
+                        p_Ulica,
+                        p_NumerDomu,
+                        p_NumerMieszkania,
+                        p_KodPocztowy,
+                        p_Miejscowosc
+                );
+            EXCEPTION
+                WHEN OTHERS THEN
+                    RAISE_APPLICATION_ERROR(-20012, 'Błąd podczas aktualizacji adresu: ' || SQLERRM);
+            END;
+        END IF;
+
+    EXCEPTION
+        WHEN NO_DATA_FOUND THEN
+            RAISE_APPLICATION_ERROR(-20013, 'Nie znaleziono adresu lub klienta');
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas aktualizacji klienta: ' || SQLERRM);
+    END KLIENTUPDATE;
+
+    PROCEDURE KLIENTDELETE(
+        p_KlientID IN KLIENT.KLIENTID%TYPE
+    ) AS
+        v_count NUMBER;
+    BEGIN
+        IF p_KlientID IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20001, 'ID klienta nie może być puste');
+        END IF;
+
+        SELECT COUNT(*) INTO v_count FROM KLIENT WHERE KLIENTID = p_KlientID;
+        IF v_count = 0 THEN
+            RAISE_APPLICATION_ERROR(-20002, 'Klient o podanym ID nie istnieje');
+        END IF;
+
+        DELETE FROM KLIENT WHERE KLIENTID = p_KlientID;
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            IF SQLCODE = -20004 THEN
+                NULL;
+            ELSE
+                RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas dezaktywacji klienta: ' || SQLERRM);
+            END IF;
+    END KLIENTDELETE;
+END KLIENT_PKG;
+/
+
+create PACKAGE PRACOWNIK_PKG AS
+    FUNCTION PRACOWNIKREAD RETURN SYS_REFCURSOR;
+
+    FUNCTION PRACOWNIKREADBYID(
+        p_PracownikId IN PRACOWNIK.PRACOWNIKID%TYPE
+    ) RETURN SYS_REFCURSOR;
+
+    FUNCTION PRACOWNIKREADACTIVE RETURN SYS_REFCURSOR;
+
+    PROCEDURE PRACOWNIKCREATE(
+        p_Imie IN PRACOWNIK.IMIE%TYPE,
+        p_Nazwisko IN PRACOWNIK.NAZWISKO%TYPE,
+        p_Stanowisko IN PRACOWNIK.STANOWISKO%TYPE,
+        p_TypPozwolenia IN PRACOWNIK.TYPPOZWOLENIA%TYPE,
+        p_Login IN PRACOWNIK.LOGIN%TYPE,
+        p_Haslo IN PRACOWNIK.HASLO%TYPE,
+        p_Ulica IN ADRES.ULICA%TYPE,
+        p_NumerDomu IN ADRES.NUMERDOMU%TYPE,
+        p_NumerMieszkania IN ADRES.NUMERMIESZKANIA%TYPE,
+        p_KodPocztowy IN ADRES.KODPOCZTOWY%TYPE,
+        p_Miejscowosc IN ADRES.MIEJSCOWOSC%TYPE
+    );
+
+    PROCEDURE PRACOWNIKUPDATE(
+        p_PracownikID IN PRACOWNIK.PRACOWNIKID%TYPE,
+        p_Imie IN PRACOWNIK.IMIE%TYPE,
+        p_Nazwisko IN PRACOWNIK.NAZWISKO%TYPE,
+        p_Stanowisko IN PRACOWNIK.STANOWISKO%TYPE,
+        p_TypPozwolenia IN PRACOWNIK.TYPPOZWOLENIA%TYPE,
+        p_Login IN PRACOWNIK.LOGIN%TYPE,
+        p_Haslo IN PRACOWNIK.HASLO%TYPE,
+        p_StatusAktywnosc IN PRACOWNIK.STATUSAKTYWNOSCI%TYPE,
+        p_Ulica IN ADRES.ULICA%TYPE,
+        p_NumerDomu IN ADRES.NUMERDOMU%TYPE,
+        p_NumerMieszkania IN ADRES.NUMERMIESZKANIA%TYPE,
+        p_KodPocztowy IN ADRES.KODPOCZTOWY%TYPE,
+        p_Miejscowosc IN ADRES.MIEJSCOWOSC%TYPE
+    );
+
+    PROCEDURE PRACOWNIKDELETE(
+        p_PracownikId IN PRACOWNIK.PRACOWNIKID%TYPE
+    );
+END PRACOWNIK_PKG;
+/
+
+create PACKAGE BODY PRACOWNIK_PKG AS
+    FUNCTION PRACOWNIKREAD
+        RETURN SYS_REFCURSOR AS
+        v_cursor SYS_REFCURSOR;
+    BEGIN
+        OPEN v_cursor FOR
+            SELECT * FROM PRACOWNIK ORDER BY PRACOWNIKID;
+        RETURN v_cursor;
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas pobierania listy pracowników: ' || SQLERRM);
+            RETURN NULL;
+    END PRACOWNIKREAD;
+
+    FUNCTION PRACOWNIKREADBYID(
+        p_PracownikId IN PRACOWNIK.PRACOWNIKID%TYPE
+    ) RETURN SYS_REFCURSOR AS
+        v_cursor SYS_REFCURSOR;
+        v_count NUMBER;
+    BEGIN
+        IF p_PracownikId IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20001, 'ID pracownika nie może być puste');
+        END IF;
+
+        SELECT COUNT(*) INTO v_count FROM PRACOWNIK WHERE PRACOWNIKID = p_PracownikId;
+        IF v_count = 0 THEN
+            RAISE_APPLICATION_ERROR(-20002, 'Pracownik o podanym ID nie istnieje');
+        END IF;
+
+        OPEN v_cursor FOR
+            SELECT * FROM PRACOWNIK WHERE PRACOWNIKID = p_PracownikId;
+        RETURN v_cursor;
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas pobierania danych pracownika: ' || SQLERRM);
+            RETURN NULL;
+    END PRACOWNIKREADBYID;
+
+    FUNCTION PRACOWNIKREADACTIVE
+        RETURN SYS_REFCURSOR AS
+        v_cursor SYS_REFCURSOR;
+    BEGIN
+        OPEN v_cursor FOR
+            SELECT p.*,
+                   a.ULICA,
+                   a.NUMERDOMU,
+                   a.NUMERMIESZKANIA,
+                   a.KODPOCZTOWY,
+                   a.MIEJSCOWOSC
+            FROM PRACOWNIK p
+                     LEFT JOIN ADRES a ON p.ADRESID = a.ADRESID
+            WHERE p.STATUSAKTYWNOSCI = '1'
+            ORDER BY p.NAZWISKO, p.IMIE;
+
+        RETURN v_cursor;
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas pobierania aktywnych pracowników: ' || SQLERRM);
+            RETURN NULL;
+    END PRACOWNIKREADACTIVE;
+
+    PROCEDURE PRACOWNIKCREATE (
+        p_Imie IN PRACOWNIK.IMIE%TYPE,
+        p_Nazwisko IN PRACOWNIK.NAZWISKO%TYPE,
+        p_Stanowisko IN PRACOWNIK.STANOWISKO%TYPE,
+        p_TypPozwolenia IN PRACOWNIK.TYPPOZWOLENIA%TYPE,
+        p_Login IN PRACOWNIK.LOGIN%TYPE,
+        p_Haslo IN PRACOWNIK.HASLO%TYPE,
+        p_Ulica IN ADRES.ULICA%TYPE,
+        p_NumerDomu IN ADRES.NUMERDOMU%TYPE,
+        p_NumerMieszkania IN ADRES.NUMERMIESZKANIA%TYPE,
+        p_KodPocztowy IN ADRES.KODPOCZTOWY%TYPE,
+        p_Miejscowosc IN ADRES.MIEJSCOWOSC%TYPE
+    ) AS
+        v_NewID NUMBER;
+        v_NewAdresID NUMBER;
+        v_login_count NUMBER;
+    BEGIN
+        IF p_Imie IS NULL OR LENGTH(TRIM(p_Imie)) = 0 THEN
+            RAISE_APPLICATION_ERROR(-20001, 'Imię pracownika nie może być puste');
+        END IF;
+
+        IF p_Nazwisko IS NULL OR LENGTH(TRIM(p_Nazwisko)) = 0 THEN
+            RAISE_APPLICATION_ERROR(-20002, 'Nazwisko pracownika nie może być puste');
+        END IF;
+
+        IF p_Stanowisko IS NULL OR LENGTH(TRIM(p_Stanowisko)) = 0 THEN
+            RAISE_APPLICATION_ERROR(-20003, 'Stanowisko nie może być puste');
+        END IF;
+
+        IF UPPER(p_Stanowisko) NOT IN ('SPRZEDAWCA', 'KIEROWNIK') THEN
+            RAISE_APPLICATION_ERROR(-20010, 'Nieprawidłowe stanowisko. Dozwolone wartości to: Sprzedawca, Kierownik');
+        END IF;
+
+        IF p_TypPozwolenia IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20004, 'Typ pozwolenia nie może być pusty');
+        END IF;
+
+        IF p_TypPozwolenia NOT IN ('A', 'B', 'C') THEN
+            RAISE_APPLICATION_ERROR(-20005, 'Nieprawidłowy typ pozwolenia. Dozwolone wartości to: A, B, C');
+        END IF;
+
+        IF p_Login IS NULL OR LENGTH(TRIM(p_Login)) < 3 THEN
+            RAISE_APPLICATION_ERROR(-20006, 'Login musi zawierać co najmniej 3 znaki');
+        END IF;
+
+        SELECT COUNT(*) INTO v_login_count FROM PRACOWNIK WHERE UPPER(LOGIN) = UPPER(p_Login);
+        IF v_login_count > 0 THEN
+            RAISE_APPLICATION_ERROR(-20007, 'Podany login jest już używany');
+        END IF;
+
+        IF p_Haslo IS NULL OR LENGTH(p_Haslo) < 6 THEN
+            RAISE_APPLICATION_ERROR(-20008, 'Hasło musi zawierać co najmniej 6 znaków');
+        END IF;
+
+        BEGIN
+            ADRES_PKG.ADRESCREATE(
+                    p_Ulica => p_Ulica,
+                    p_NumerDomu => p_NumerDomu,
+                    p_NumerMieszkania => p_NumerMieszkania,
+                    p_KodPocztowy => p_KodPocztowy,
+                    p_Miejscowosc => p_Miejscowosc,
+                    p_NewAdresID => v_NewAdresID
+            );
+        EXCEPTION
+            WHEN OTHERS THEN
+                RAISE_APPLICATION_ERROR(-20011, 'Błąd podczas tworzenia adresu: ' || SQLERRM);
+        END;
+
+        SELECT SQ_PR_ID.NEXTVAL INTO v_NewID FROM DUAL;
+
+        BEGIN
+            INSERT INTO PRACOWNIK (
+                pracownikid, imie, nazwisko, stanowisko,
+                adresid, typpozwolenia, login, haslo, statusaktywnosci
+            ) VALUES (
+                         v_NewID, p_Imie, p_Nazwisko, p_Stanowisko,
+                         v_NewAdresID, p_TypPozwolenia, p_Login, p_Haslo, '1'
+                     );
+        EXCEPTION
+            WHEN DUP_VAL_ON_INDEX THEN
+                IF v_NewAdresID IS NOT NULL THEN
+                    DELETE FROM ADRES WHERE ADRESID = v_NewAdresID;
+                END IF;
+                RAISE_APPLICATION_ERROR(-20012, 'Pracownik z takimi danymi już istnieje');
+            WHEN OTHERS THEN
+                IF v_NewAdresID IS NOT NULL THEN
+                    DELETE FROM ADRES WHERE ADRESID = v_NewAdresID;
+                END IF;
+                RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas tworzenia pracownika: ' || SQLERRM);
+        END;
+    END PRACOWNIKCREATE;
+
+    PROCEDURE PRACOWNIKUPDATE (
+        p_PracownikID IN PRACOWNIK.PRACOWNIKID%TYPE,
+        p_Imie IN PRACOWNIK.IMIE%TYPE,
+        p_Nazwisko IN PRACOWNIK.NAZWISKO%TYPE,
+        p_Stanowisko IN PRACOWNIK.STANOWISKO%TYPE,
+        p_TypPozwolenia IN PRACOWNIK.TYPPOZWOLENIA%TYPE,
+        p_Login IN PRACOWNIK.LOGIN%TYPE,
+        p_Haslo IN PRACOWNIK.HASLO%TYPE,
+        p_StatusAktywnosc IN PRACOWNIK.STATUSAKTYWNOSCI%TYPE,
+        p_Ulica IN ADRES.ULICA%TYPE,
+        p_NumerDomu IN ADRES.NUMERDOMU%TYPE,
+        p_NumerMieszkania IN ADRES.NUMERMIESZKANIA%TYPE,
+        p_KodPocztowy IN ADRES.KODPOCZTOWY%TYPE,
+        p_Miejscowosc IN ADRES.MIEJSCOWOSC%TYPE
+    ) AS
+        v_Imie PRACOWNIK.IMIE%TYPE;
+        v_Nazwisko PRACOWNIK.NAZWISKO%TYPE;
+        v_Stanowisko PRACOWNIK.STANOWISKO%TYPE;
+        v_TypPozwolenia PRACOWNIK.TYPPOZWOLENIA%TYPE;
+        v_Login PRACOWNIK.LOGIN%TYPE;
+        v_Haslo PRACOWNIK.HASLO%TYPE;
+        v_StatusAktywnosc PRACOWNIK.STATUSAKTYWNOSCI%TYPE;
+        v_AdresID PRACOWNIK.ADRESID%TYPE;
+        v_count NUMBER;
+        v_login_count NUMBER;
+    BEGIN
+        IF p_PracownikID IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20001, 'ID pracownika nie może być puste');
+        END IF;
+
+        SELECT COUNT(*) INTO v_count FROM PRACOWNIK WHERE PRACOWNIKID = p_PracownikID;
+        IF v_count = 0 THEN
+            RAISE_APPLICATION_ERROR(-20002, 'Pracownik o podanym ID nie istnieje');
+        END IF;
+
+        IF p_Stanowisko IS NOT NULL AND UPPER(p_Stanowisko) NOT IN ('SPRZEDAWCA', 'KIEROWNIK') THEN
+            RAISE_APPLICATION_ERROR(-20010, 'Nieprawidłowe stanowisko. Dozwolone wartości to: Sprzedawca, Kierownik');
+        END IF;
+
+        IF p_TypPozwolenia IS NOT NULL AND p_TypPozwolenia NOT IN ('A', 'B', 'C') THEN
+            RAISE_APPLICATION_ERROR(-20003, 'Nieprawidłowy typ pozwolenia. Dozwolone wartości to: A, B, C');
+        END IF;
+
+        IF p_Login IS NOT NULL THEN
+            IF LENGTH(TRIM(p_Login)) < 3 THEN
+                RAISE_APPLICATION_ERROR(-20004, 'Login musi zawierać co najmniej 3 znaki');
+            END IF;
+
+            SELECT COUNT(*) INTO v_login_count
+            FROM PRACOWNIK
+            WHERE UPPER(LOGIN) = UPPER(p_Login) AND PRACOWNIKID != p_PracownikID;
+
+            IF v_login_count > 0 THEN
+                RAISE_APPLICATION_ERROR(-20005, 'Podany login jest już używany przez innego pracownika');
+            END IF;
+        END IF;
+
+        IF p_Haslo IS NOT NULL AND LENGTH(p_Haslo) < 6 THEN
+            RAISE_APPLICATION_ERROR(-20006, 'Hasło musi zawierać co najmniej 6 znaków');
+        END IF;
+
+        IF p_StatusAktywnosc IS NOT NULL AND p_StatusAktywnosc NOT IN ('0', '1') THEN
+            RAISE_APPLICATION_ERROR(-20007, 'Status aktywności musi mieć wartość ''0'' (nieaktywny) lub ''1'' (aktywny)');
+        END IF;
+
+        SELECT IMIE, NAZWISKO, STANOWISKO, TYPPOZWOLENIA,
+               LOGIN, HASLO, STATUSAKTYWNOSCI, ADRESID
+        INTO v_Imie, v_Nazwisko, v_Stanowisko, v_TypPozwolenia,
+            v_Login, v_Haslo, v_StatusAktywnosc, v_AdresID
+        FROM PRACOWNIK
+        WHERE PRACOWNIKID = p_PracownikID;
+
+        UPDATE PRACOWNIK
+        SET IMIE = NVL(p_Imie, v_Imie),
+            NAZWISKO = NVL(p_Nazwisko, v_Nazwisko),
+            STANOWISKO = NVL(p_Stanowisko, v_Stanowisko),
+            TYPPOZWOLENIA = NVL(p_TypPozwolenia, v_TypPozwolenia),
+            LOGIN = NVL(p_Login, v_Login),
+            HASLO = NVL(p_Haslo, v_Haslo),
+            STATUSAKTYWNOSCI = NVL(p_StatusAktywnosc, v_StatusAktywnosc)
+        WHERE PRACOWNIKID = p_PracownikID;
+
+        IF p_Ulica IS NOT NULL OR p_NumerDomu IS NOT NULL OR p_NumerMieszkania IS NOT NULL OR
+           p_KodPocztowy IS NOT NULL OR p_Miejscowosc IS NOT NULL THEN
+            BEGIN
+                ADRES_PKG.ADRESUPDATE(
+                        v_AdresID,
+                        p_Ulica,
+                        p_NumerDomu,
+                        p_NumerMieszkania,
+                        p_KodPocztowy,
+                        p_Miejscowosc
+                );
+            EXCEPTION
+                WHEN OTHERS THEN
+                    RAISE_APPLICATION_ERROR(-20008, 'Błąd podczas aktualizacji adresu: ' || SQLERRM);
+            END;
+        END IF;
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas aktualizacji pracownika: ' || SQLERRM);
+    END PRACOWNIKUPDATE;
+
+    PROCEDURE PRACOWNIKDELETE(
+        p_PracownikId IN PRACOWNIK.PRACOWNIKID%TYPE
+    ) AS
+        v_count NUMBER;
+    BEGIN
+        IF p_PracownikId IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20001, 'ID pracownika nie może być puste');
+        END IF;
+
+        SELECT COUNT(*) INTO v_count FROM PRACOWNIK WHERE PRACOWNIKID = p_PracownikId;
+        IF v_count = 0 THEN
+            RAISE_APPLICATION_ERROR(-20002, 'Pracownik o podanym ID nie istnieje');
+        END IF;
+
+        DELETE FROM PRACOWNIK WHERE PRACOWNIKID = p_PracownikId;
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            IF SQLCODE = -20004 THEN
+                NULL;
+            ELSE
+                RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas dezaktywacji pracownika: ' || SQLERRM);
+            END IF;
+    END PRACOWNIKDELETE;
+END PRACOWNIK_PKG;
+/
+
+create PACKAGE PRODUKT_PKG AS
+    FUNCTION PRODUKTREAD RETURN SYS_REFCURSOR;
+
+    FUNCTION PRODUKTREADBYID(
+        p_ProduktId IN PRODUKT.PRODUKTID%TYPE
+    ) RETURN SYS_REFCURSOR;
+
+    FUNCTION PRODUKTREADAVAILABLE(
+        p_TransakcjaID IN TRANSAKCJA.TRANSAKCJAID%TYPE
+    ) RETURN SYS_REFCURSOR;
+
+    PROCEDURE PRODUKTCREATE(
+        p_KategoriaId IN PRODUKT.KATEGORIAID%TYPE,
+        p_AmunicjaId IN PRODUKT.AMUNICJAID%TYPE,
+        p_Nazwa IN PRODUKT.NAZWA%TYPE,
+        p_NumerSeryjny IN PRODUKT.NUMERSERYJNY%TYPE,
+        p_Cena IN PRODUKT.CENA%TYPE
+    );
+
+    PROCEDURE PRODUKTUPDATE(
+        p_ProduktID IN PRODUKT.PRODUKTID%TYPE,
+        p_KategoriaId IN PRODUKT.KATEGORIAID%TYPE,
+        p_AmunicjaId IN PRODUKT.AMUNICJAID%TYPE,
+        p_Nazwa IN PRODUKT.NAZWA%TYPE,
+        p_NumerSeryjny IN PRODUKT.NUMERSERYJNY%TYPE,
+        p_Cena IN PRODUKT.CENA%TYPE
+    );
+
+    PROCEDURE PRODUKTDELETE(
+        p_ProduktId IN PRODUKT.PRODUKTID%TYPE
+    );
+END PRODUKT_PKG;
+/
+
+create PACKAGE BODY PRODUKT_PKG AS
+    FUNCTION PRODUKTREAD
+        RETURN SYS_REFCURSOR AS
+        v_cursor SYS_REFCURSOR;
+    BEGIN
+        OPEN v_cursor FOR
+            SELECT p.*,
+                   kp.NAZWAKATEGORII as KATEGORIA_NAZWA,
+                   kp.WYMAGANEUPRAWNIENIA,
+                   a.NAZWA as AMUNICJA_NAZWA,
+                   a.CENA as AMUNICJA_CENA,
+                   a.ILOSC as DOSTEPNA_ILOSC_AMUNICJI
+            FROM PRODUKT p
+                     LEFT JOIN KATEGORIAPRODUKTOW kp ON p.KATEGORIAID = kp.KATEGORIAID
+                     LEFT JOIN AMUNICJA a ON p.AMUNICJAID = a.AMUNICJAID
+            ORDER BY p.PRODUKTID;
+        RETURN v_cursor;
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas pobierania listy produktów: ' || SQLERRM);
+            RETURN NULL;
+    END PRODUKTREAD;
+
+    FUNCTION PRODUKTREADBYID(
+        p_ProduktId IN PRODUKT.PRODUKTID%TYPE
+    ) RETURN SYS_REFCURSOR AS
+        v_cursor SYS_REFCURSOR;
+        v_count NUMBER;
+    BEGIN
+        IF p_ProduktId IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20001, 'ID produktu nie może być puste');
+        END IF;
+
+        SELECT COUNT(*) INTO v_count FROM PRODUKT WHERE PRODUKTID = p_ProduktId;
+        IF v_count = 0 THEN
+            RAISE_APPLICATION_ERROR(-20002, 'Produkt o podanym ID nie istnieje');
+        END IF;
+
+        OPEN v_cursor FOR
+            SELECT * FROM PRODUKT WHERE PRODUKTID = p_ProduktId;
+        RETURN v_cursor;
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas pobierania danych produktu: ' || SQLERRM);
+            RETURN NULL;
+    END PRODUKTREADBYID;
+
+
+    FUNCTION PRODUKTREADAVAILABLE(
+        p_TransakcjaID IN TRANSAKCJA.TRANSAKCJAID%TYPE
+    ) RETURN SYS_REFCURSOR AS
+        v_cursor SYS_REFCURSOR;
+    BEGIN
+        OPEN v_cursor FOR
+            SELECT p.*,
+                   kp.NAZWAKATEGORII as KATEGORIA_NAZWA,
+                   kp.WYMAGANEUPRAWNIENIA,
+                   a.NAZWA as AMUNICJA_NAZWA,
+                   a.CENA as AMUNICJA_CENA,
+                   a.ILOSC as DOSTEPNA_ILOSC_AMUNICJI
+            FROM PRODUKT p
+                     LEFT JOIN KATEGORIAPRODUKTOW kp ON p.KATEGORIAID = kp.KATEGORIAID
+                     LEFT JOIN AMUNICJA a ON p.AMUNICJAID = a.AMUNICJAID
+            WHERE p.DOSTEPNOSC = '1'
+               OR EXISTS (
+                SELECT 1
+                FROM TRANSAKCJAPRODUKT tp
+                WHERE tp.PRODUKTID = p.PRODUKTID
+                  AND tp.TRANSAKCJAID = p_TransakcjaID
+            )
+            ORDER BY p.NAZWA;
+
+        RETURN v_cursor;
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas pobierania produktów: ' || SQLERRM);
+            RETURN NULL;
+    END PRODUKTREADAVAILABLE;
+
+    PROCEDURE PRODUKTCREATE (
+        p_KategoriaId IN PRODUKT.KATEGORIAID%TYPE,
+        p_AmunicjaId IN PRODUKT.AMUNICJAID%TYPE,
+        p_Nazwa IN PRODUKT.NAZWA%TYPE,
+        p_NumerSeryjny IN PRODUKT.NUMERSERYJNY%TYPE,
+        p_Cena IN PRODUKT.CENA%TYPE
+    ) AS
+        v_NewProduktID NUMBER;
+        v_count NUMBER;
+        v_exists_num_seryjny NUMBER;
+    BEGIN
+        IF p_KategoriaId IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20001, 'ID kategorii nie może być puste');
+        END IF;
+
+        SELECT COUNT(*) INTO v_count FROM KATEGORIAPRODUKTOW WHERE KATEGORIAID = p_KategoriaId;
+        IF v_count = 0 THEN
+            RAISE_APPLICATION_ERROR(-20002, 'Kategoria o podanym ID nie istnieje');
+        END IF;
+
+        IF p_AmunicjaId IS NOT NULL THEN
+            SELECT COUNT(*) INTO v_count FROM AMUNICJA WHERE AMUNICJAID = p_AmunicjaId;
+            IF v_count = 0 THEN
+                RAISE_APPLICATION_ERROR(-20003, 'Amunicja o podanym ID nie istnieje');
+            END IF;
+        END IF;
+
+        IF p_Nazwa IS NULL OR LENGTH(TRIM(p_Nazwa)) = 0 THEN
+            RAISE_APPLICATION_ERROR(-20004, 'Nazwa produktu nie może być pusta');
+        END IF;
+
+        IF p_NumerSeryjny IS NULL OR LENGTH(TRIM(p_NumerSeryjny)) = 0 THEN
+            RAISE_APPLICATION_ERROR(-20005, 'Numer seryjny nie może być pusty');
+        END IF;
+
+        SELECT COUNT(*) INTO v_exists_num_seryjny FROM PRODUKT WHERE NUMERSERYJNY = p_NumerSeryjny;
+        IF v_exists_num_seryjny > 0 THEN
+            RAISE_APPLICATION_ERROR(-20006, 'Produkt z podanym numerem seryjnym już istnieje');
+        END IF;
+
+        IF p_Cena IS NULL OR p_Cena <= 0 THEN
+            RAISE_APPLICATION_ERROR(-20007, 'Cena musi być większa od 0');
+        END IF;
+
+        SELECT SQ_PRO_ID.NEXTVAL INTO v_NewProduktID FROM DUAL;
+
+        BEGIN
+            INSERT INTO PRODUKT (produktid, kategoriaid, amunicjaid, nazwa, numerseryjny, cena, dostepnosc)
+            VALUES (v_NewProduktID, p_KategoriaId, p_AmunicjaId, p_Nazwa, p_NumerSeryjny, p_Cena, '1');
+        EXCEPTION
+            WHEN DUP_VAL_ON_INDEX THEN
+                RAISE_APPLICATION_ERROR(-20009, 'Produkt o takich parametrach już istnieje');
+            WHEN OTHERS THEN
+                RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas tworzenia produktu: ' || SQLERRM);
+        END;
+    END PRODUKTCREATE;
+
+    PROCEDURE PRODUKTUPDATE(
+        p_ProduktID      IN PRODUKT.PRODUKTID%TYPE,
+        p_KategoriaId    IN PRODUKT.KATEGORIAID%TYPE,
+        p_AmunicjaId     IN PRODUKT.AMUNICJAID%TYPE,
+        p_Nazwa          IN PRODUKT.NAZWA%TYPE,
+        p_NumerSeryjny   IN PRODUKT.NUMERSERYJNY%TYPE,
+        p_Cena           IN PRODUKT.CENA%TYPE
+    ) AS
+        v_KategoriaId    PRODUKT.KATEGORIAID%TYPE;
+        v_AmunicjaId     PRODUKT.AMUNICJAID%TYPE;
+        v_Nazwa          PRODUKT.NAZWA%TYPE;
+        v_NumerSeryjny   PRODUKT.NUMERSERYJNY%TYPE;
+        v_Cena           PRODUKT.CENA%TYPE;
+        v_Dostepnosc     PRODUKT.DOSTEPNOSC%TYPE;
+        v_count          NUMBER;
+        v_exists_num_seryjny NUMBER;
+        v_produkty_w_zamowieniach NUMBER := 0;
+    BEGIN
+        IF p_ProduktID IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20001, 'ID produktu nie może być puste');
+        END IF;
+
+        SELECT COUNT(*) INTO v_count FROM PRODUKT WHERE PRODUKTID = p_ProduktID;
+        IF v_count = 0 THEN
+            RAISE_APPLICATION_ERROR(-20002, 'Produkt o podanym ID nie istnieje');
+        END IF;
+
+        IF p_KategoriaId IS NOT NULL THEN
+            SELECT COUNT(*) INTO v_count FROM KATEGORIAPRODUKTOW WHERE KATEGORIAID = p_KategoriaId;
+            IF v_count = 0 THEN
+                RAISE_APPLICATION_ERROR(-20003, 'Kategoria o podanym ID nie istnieje');
+            END IF;
+        END IF;
+
+        IF p_AmunicjaId IS NOT NULL THEN
+            SELECT COUNT(*) INTO v_count FROM AMUNICJA WHERE AMUNICJAID = p_AmunicjaId;
+            IF v_count = 0 THEN
+                RAISE_APPLICATION_ERROR(-20004, 'Amunicja o podanym ID nie istnieje');
+            END IF;
+        END IF;
+
+        IF p_Nazwa IS NOT NULL AND LENGTH(TRIM(p_Nazwa)) = 0 THEN
+            RAISE_APPLICATION_ERROR(-20005, 'Nazwa produktu nie może być pusta');
+        END IF;
+
+        IF p_NumerSeryjny IS NOT NULL THEN
+            IF LENGTH(TRIM(p_NumerSeryjny)) = 0 THEN
+                RAISE_APPLICATION_ERROR(-20006, 'Numer seryjny nie może być pusty');
+            END IF;
+
+            SELECT COUNT(*) INTO v_exists_num_seryjny
+            FROM PRODUKT
+            WHERE NUMERSERYJNY = p_NumerSeryjny AND PRODUKTID != p_ProduktID;
+
+            IF v_exists_num_seryjny > 0 THEN
+                RAISE_APPLICATION_ERROR(-20007, 'Produkt z podanym numerem seryjnym już istnieje');
+            END IF;
+        END IF;
+
+        IF p_Cena IS NOT NULL AND p_Cena <= 0 THEN
+            RAISE_APPLICATION_ERROR(-20008, 'Cena musi być większa od 0');
+        END IF;
+
+        SELECT KATEGORIAID, AMUNICJAID, NAZWA, NUMERSERYJNY, CENA, DOSTEPNOSC
+        INTO v_KategoriaId, v_AmunicjaId, v_Nazwa, v_NumerSeryjny, v_Cena, v_Dostepnosc
+        FROM PRODUKT
+        WHERE PRODUKTID = p_ProduktID;
+
+        SELECT COUNT(*) INTO v_produkty_w_zamowieniach
+        FROM TRANSAKCJAPRODUKT
+        WHERE PRODUKTID = p_ProduktID;
+
+        IF v_produkty_w_zamowieniach > 0 THEN
+            RAISE_APPLICATION_ERROR(-20009, 'Nie można zaktualizować produktu, który występuje w transakcjach');
+        ELSE
+            UPDATE PRODUKT
+            SET KATEGORIAID = NVL(p_KategoriaId, v_KategoriaId),
+                AMUNICJAID = p_AmunicjaId,
+                NAZWA = NVL(p_Nazwa, v_Nazwa),
+                NUMERSERYJNY = NVL(p_NumerSeryjny, v_NumerSeryjny),
+                CENA = NVL(p_Cena, v_Cena)
+            WHERE PRODUKTID = p_ProduktID;
+
+            IF SQL%ROWCOUNT = 0 THEN
+                RAISE_APPLICATION_ERROR(-20010, 'Aktualizacja produktu nie powiodła się');
+            END IF;
+        END IF;
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas aktualizacji produktu: ' || SQLERRM);
+    END PRODUKTUPDATE;
+
+    PROCEDURE PRODUKTDELETE(
+        p_ProduktID IN PRODUKT.PRODUKTID%TYPE
+    ) AS
+        v_count NUMBER;
+    BEGIN
+        IF p_ProduktID IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20001, 'ID produktu nie może być puste');
+        END IF;
+
+        SELECT COUNT(*) INTO v_count FROM PRODUKT WHERE PRODUKTID = p_ProduktID;
+        IF v_count = 0 THEN
+            RAISE_APPLICATION_ERROR(-20002, 'Produkt o podanym ID nie istnieje');
+        END IF;
+
+        DELETE FROM PRODUKT WHERE PRODUKTID = p_ProduktID;
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            IF SQLCODE IN (-20003, -20004) THEN
+                NULL;
+            ELSE
+                RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas usuwania produktu: ' || SQLERRM);
+            END IF;
+    END PRODUKTDELETE;
+END PRODUKT_PKG;
+/
+
+create PACKAGE TRANSAKCJA_PKG AS
+    FUNCTION TRANSAKCJAREAD RETURN SYS_REFCURSOR;
+
+    FUNCTION TRANSAKCJAREADBYID(
+        p_TransakcjaID IN TRANSAKCJA.TRANSAKCJAID%TYPE
+    ) RETURN SYS_REFCURSOR;
+
+    FUNCTION TRANSAKCJAREADBYDATA(
+        p_DataOd IN VARCHAR2 DEFAULT NULL,
+        p_DataDo IN VARCHAR2 DEFAULT NULL
+    ) RETURN SYS_REFCURSOR;
+
+    FUNCTION TRANSAKCJAPRODUKTREAD(
+        p_TransakcjaID IN TRANSAKCJA.TRANSAKCJAID%TYPE
+    ) RETURN SYS_REFCURSOR;
+
+    PROCEDURE TRANSAKCJACREATE(
+        p_KlientID IN TRANSAKCJA.KLIENTID%TYPE,
+        p_PracownikID IN TRANSAKCJA.PRACOWNIKID%TYPE,
+        p_NewTransakcjaID OUT TRANSAKCJA.TRANSAKCJAID%TYPE
+    );
+
+    PROCEDURE TRANSAKCJAUPDATE(
+        p_TransakcjaID IN TRANSAKCJA.TRANSAKCJAID%TYPE,
+        p_KlientID IN TRANSAKCJA.KLIENTID%TYPE,
+        p_PracownikID IN TRANSAKCJA.PRACOWNIKID%TYPE,
+        p_DataTransakcji IN TRANSAKCJA.DATATRANSAKCJI%TYPE DEFAULT NULL,
+        p_WartoscTransakcji IN TRANSAKCJA.WARTOSCTRANSAKCJI%TYPE DEFAULT NULL
+    );
+
+    PROCEDURE TRANSAKCJADELETE(
+        p_TransakcjaID IN TRANSAKCJA.TRANSAKCJAID%TYPE
+    );
+
+    PROCEDURE TRANSAKCJAPRODUKTCREATE(
+        p_TransakcjaID IN TRANSAKCJA.TRANSAKCJAID%TYPE,
+        p_ProduktID IN PRODUKT.PRODUKTID%TYPE,
+        p_IloscProduktu IN NUMBER DEFAULT 1,
+        p_IloscAmunicji IN NUMBER DEFAULT 0
+    );
+
+    PROCEDURE TRANSAKCJAPRODUKTUPDATE(
+        p_TransakcjaID IN TRANSAKCJA.TRANSAKCJAID%TYPE,
+        p_ProduktID IN PRODUKT.PRODUKTID%TYPE,
+        p_IloscAmunicji IN NUMBER
+    );
+
+    PROCEDURE TRANSAKCJAPRODUKTDELETE(
+        p_TransakcjaID IN TRANSAKCJAPRODUKT.TRANSAKCJAID%TYPE,
+        p_ProduktID IN TRANSAKCJAPRODUKT.PRODUKTID%TYPE
+    );
+        
+END TRANSAKCJA_PKG;
+/
+
+create PACKAGE BODY TRANSAKCJA_PKG AS
+    FUNCTION TRANSAKCJAREAD
+        RETURN SYS_REFCURSOR AS
+        v_cursor SYS_REFCURSOR;
+    BEGIN
+        OPEN v_cursor FOR
+            SELECT t.*,
+                   k.IMIE || ' ' || k.NAZWISKO as KLIENT_NAZWA,
+                   p.IMIE || ' ' || p.NAZWISKO as PRACOWNIK_NAZWA
+            FROM TRANSAKCJA t
+                     LEFT JOIN KLIENT k ON t.KLIENTID = k.KLIENTID
+                     LEFT JOIN PRACOWNIK p ON t.PRACOWNIKID = p.PRACOWNIKID
+            ORDER BY t.TRANSAKCJAID;
+        RETURN v_cursor;
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas pobierania listy transakcji: ' || SQLERRM);
+            RETURN NULL;
+    END TRANSAKCJAREAD;
+
+    FUNCTION TRANSAKCJAREADBYID(
+        p_TransakcjaID IN TRANSAKCJA.TRANSAKCJAID%TYPE
+    ) RETURN SYS_REFCURSOR AS
+        v_cursor SYS_REFCURSOR;
+        v_exists NUMBER;
+    BEGIN
+        SELECT COUNT(*) INTO v_exists FROM TRANSAKCJA WHERE TRANSAKCJAID = p_TransakcjaID;
+
+        IF v_exists = 0 THEN
+            RAISE_APPLICATION_ERROR(-20001, 'Transakcja o podanym ID nie istnieje');
+        END IF;
+
+        OPEN v_cursor FOR
+            SELECT t.*,
+                   k.IMIE || ' ' || k.NAZWISKO as KLIENT_NAZWA,
+                   k.TYPPOZWOLENIA as KLIENT_TYPPOZWOLENIA,
+                   p.IMIE || ' ' || p.NAZWISKO as PRACOWNIK_NAZWA,
+                   p.TYPPOZWOLENIA as PRACOWNIK_TYPPOZWOLENIA
+            FROM TRANSAKCJA t
+                     LEFT JOIN KLIENT k ON t.KLIENTID = k.KLIENTID
+                     LEFT JOIN PRACOWNIK p ON t.PRACOWNIKID = p.PRACOWNIKID
+            WHERE t.TRANSAKCJAID = p_TransakcjaID;
+
+        RETURN v_cursor;
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas pobierania transakcji: ' || SQLERRM);
+            RETURN NULL;
+    END TRANSAKCJAREADBYID;
+
+    FUNCTION TRANSAKCJAREADBYDATA(
+        p_DataOd IN VARCHAR2 DEFAULT NULL,
+        p_DataDo IN VARCHAR2 DEFAULT NULL
+    ) RETURN SYS_REFCURSOR AS
+        v_cursor SYS_REFCURSOR;
+        v_data_od DATE := NULL;
+        v_data_do DATE := NULL;
+    BEGIN
+        IF p_DataOd IS NOT NULL THEN
+            v_data_od := TO_DATE(p_DataOd, 'YYYY-MM-DD');
+        END IF;
+
+        IF p_DataDo IS NOT NULL THEN
+            v_data_do := TO_DATE(p_DataDo, 'YYYY-MM-DD');
+        END IF;
+
+        OPEN v_cursor FOR
+            SELECT t.*,
+                   k.IMIE || ' ' || k.NAZWISKO as KLIENT_NAZWA,
+                   k.TYPPOZWOLENIA as KLIENT_TYPPOZWOLENIA,
+                   p.IMIE || ' ' || p.NAZWISKO as PRACOWNIK_NAZWA,
+                   p.TYPPOZWOLENIA as PRACOWNIK_TYPPOZWOLENIA
+            FROM TRANSAKCJA t
+                     LEFT JOIN KLIENT k ON t.KLIENTID = k.KLIENTID
+                     LEFT JOIN PRACOWNIK p ON t.PRACOWNIKID = p.PRACOWNIKID
+            WHERE (v_data_od IS NULL OR t.DATATRANSAKCJI >= v_data_od)
+              AND (v_data_do IS NULL OR t.DATATRANSAKCJI <= v_data_do)
+            ORDER BY t.DATATRANSAKCJI DESC;
+
+        RETURN v_cursor;
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas filtrowania transakcji po dacie: ' || SQLERRM);
+            RETURN NULL;
+    END TRANSAKCJAREADBYDATA;
+
+    FUNCTION TRANSAKCJAPRODUKTREAD(
+        p_TransakcjaID IN TRANSAKCJA.TRANSAKCJAID%TYPE
+    ) RETURN SYS_REFCURSOR AS
+        v_cursor SYS_REFCURSOR;
+    BEGIN
+        OPEN v_cursor FOR
+            SELECT
+                t.TRANSAKCJAID,
+                t.DATATRANSAKCJI,
+                t.WARTOSCTRANSAKCJI,
+                k.KLIENTID,
+                k.IMIE || ' ' || k.NAZWISKO AS KLIENT_NAZWA,
+                k.TYPPOZWOLENIA AS KLIENT_TYPPOZWOLENIA,
+                pr.PRACOWNIKID,
+                pr.IMIE || ' ' || pr.NAZWISKO AS PRACOWNIK_NAZWA,
+                pr.TYPPOZWOLENIA AS PRACOWNIK_TYPPOZWOLENIA,
+                p.PRODUKTID,
+                p.NAZWA AS NAZWA_PRODUKTU,
+                zp.ILOSC AS ILOSC_AMUNICJI,
+                zp.CENA AS CENA_JEDNOSTKOWA,
+                a.AMUNICJAID,
+                a.NAZWA AS NAZWA_AMUNICJI,
+                a.CENA AS CENA_AMUNICJI
+            FROM
+                TRANSAKCJA t
+                    JOIN KLIENT k ON t.KLIENTID = k.KLIENTID
+                    JOIN PRACOWNIK pr ON t.PRACOWNIKID = pr.PRACOWNIKID
+                    LEFT JOIN TRANSAKCJAPRODUKT zp ON t.TRANSAKCJAID = zp.TRANSAKCJAID
+                    LEFT JOIN PRODUKT p ON zp.PRODUKTID = p.PRODUKTID
+                    LEFT JOIN AMUNICJA a ON p.AMUNICJAID = a.AMUNICJAID
+            WHERE
+                t.TRANSAKCJAID = p_TransakcjaID
+            ORDER BY
+                p.NAZWA;
+
+        RETURN v_cursor;
+    END TRANSAKCJAPRODUKTREAD;
+
+    PROCEDURE TRANSAKCJACREATE(
+        p_KlientID IN TRANSAKCJA.KLIENTID%TYPE,
+        p_PracownikID IN TRANSAKCJA.PRACOWNIKID%TYPE,
+        p_NewTransakcjaID OUT TRANSAKCJA.TRANSAKCJAID%TYPE
+    ) AS
+        v_KlientExists NUMBER;
+        v_PracownikExists NUMBER;
+        v_KlientAktywny CHAR(1);
+        v_PracownikAktywny CHAR(1);
+    BEGIN
+        SELECT COUNT(*), MAX(STATUSAKTYWNOSCI)
+        INTO v_KlientExists, v_KlientAktywny
+        FROM KLIENT
+        WHERE KLIENTID = p_KlientID;
+
+        IF v_KlientExists = 0 THEN
+            RAISE_APPLICATION_ERROR(-20101, 'Podany klient nie istnieje');
+        END IF;
+
+        IF v_KlientAktywny = '0' THEN
+            RAISE_APPLICATION_ERROR(-20103, 'Wybrany klient jest nieaktywny');
+        END IF;
+
+        SELECT COUNT(*), MAX(STATUSAKTYWNOSCI)
+        INTO v_PracownikExists, v_PracownikAktywny
+        FROM PRACOWNIK
+        WHERE PRACOWNIKID = p_PracownikID;
+
+        IF v_PracownikExists = 0 THEN
+            RAISE_APPLICATION_ERROR(-20102, 'Podany pracownik nie istnieje');
+        END IF;
+
+        IF v_PracownikAktywny = '0' THEN
+            RAISE_APPLICATION_ERROR(-20104, 'Wybrany pracownik jest nieaktywny');
+        END IF;
+
+        SELECT SQ_TR_ID.NEXTVAL INTO p_NewTransakcjaID FROM DUAL;
+
+        INSERT INTO TRANSAKCJA (
+            TRANSAKCJAID,
+            KLIENTID,
+            PRACOWNIKID,
+            DATATRANSAKCJI,
+            WARTOSCTRANSAKCJI
+        ) VALUES (
+                     p_NewTransakcjaID,
+                     p_KlientID,
+                     p_PracownikID,
+                     SYSDATE,
+                     0
+                 );
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            ROLLBACK;
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas tworzenia transakcji: ' || SQLERRM);
+    END TRANSAKCJACREATE;
+
+    PROCEDURE TRANSAKCJAUPDATE(
+        p_TransakcjaID IN TRANSAKCJA.TRANSAKCJAID%TYPE,
+        p_KlientID IN TRANSAKCJA.KLIENTID%TYPE,
+        p_PracownikID IN TRANSAKCJA.PRACOWNIKID%TYPE,
+        p_DataTransakcji IN TRANSAKCJA.DATATRANSAKCJI%TYPE DEFAULT NULL,
+        p_WartoscTransakcji IN TRANSAKCJA.WARTOSCTRANSAKCJI%TYPE DEFAULT NULL
+    ) AS
+        v_count NUMBER;
+        v_klient_count NUMBER;
+        v_pracownik_count NUMBER;
+        v_klient_aktywny CHAR(1);
+        v_pracownik_aktywny CHAR(1);
+    BEGIN
+        IF p_TransakcjaID IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20001, 'ID transakcji nie może być puste');
+        END IF;
+
+        SELECT COUNT(*) INTO v_count FROM TRANSAKCJA WHERE TRANSAKCJAID = p_TransakcjaID;
+        IF v_count = 0 THEN
+            RAISE_APPLICATION_ERROR(-20002, 'Transakcja o podanym ID nie istnieje');
+        END IF;
+
+        IF p_KlientID IS NOT NULL THEN
+            SELECT COUNT(*), MAX(STATUSAKTYWNOSCI)
+            INTO v_klient_count, v_klient_aktywny
+            FROM KLIENT
+            WHERE KLIENTID = p_KlientID;
+
+            IF v_klient_count = 0 THEN
+                RAISE_APPLICATION_ERROR(-20003, 'Podany klient nie istnieje');
+            END IF;
+
+            IF v_klient_aktywny = '0' THEN
+                RAISE_APPLICATION_ERROR(-20004, 'Wybrany klient jest nieaktywny');
+            END IF;
+        END IF;
+
+        IF p_PracownikID IS NOT NULL THEN
+            SELECT COUNT(*), MAX(STATUSAKTYWNOSCI)
+            INTO v_pracownik_count, v_pracownik_aktywny
+            FROM PRACOWNIK
+            WHERE PRACOWNIKID = p_PracownikID;
+
+            IF v_pracownik_count = 0 THEN
+                RAISE_APPLICATION_ERROR(-20003, 'Podany pracownik nie istnieje');
+            END IF;
+
+            IF v_pracownik_aktywny = '0' THEN
+                RAISE_APPLICATION_ERROR(-20004, 'Wybrany pracownik jest nieaktywny');
+            END IF;
+        END IF;
+
+        IF p_WartoscTransakcji IS NOT NULL AND p_WartoscTransakcji < 0 THEN
+            RAISE_APPLICATION_ERROR(-20005, 'Wartość transakcji nie może być ujemna');
+        END IF;
+
+        UPDATE TRANSAKCJA
+        SET KLIENTID = CASE WHEN p_KlientID IS NOT NULL THEN p_KlientID ELSE KLIENTID END,
+            PRACOWNIKID = CASE WHEN p_PracownikID IS NOT NULL THEN p_PracownikID ELSE PRACOWNIKID END,
+            DATATRANSAKCJI = CASE WHEN p_DataTransakcji IS NOT NULL THEN p_DataTransakcji ELSE DATATRANSAKCJI END,
+            WARTOSCTRANSAKCJI = CASE WHEN p_WartoscTransakcji IS NOT NULL THEN p_WartoscTransakcji ELSE WARTOSCTRANSAKCJI END
+        WHERE TRANSAKCJAID = p_TransakcjaID;
+
+        IF SQL%ROWCOUNT = 0 THEN
+            RAISE_APPLICATION_ERROR(-20006, 'Aktualizacja transakcji nie powiodła się');
+        END IF;
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            ROLLBACK;
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas aktualizacji transakcji: ' || SQLERRM);
+    END TRANSAKCJAUPDATE;
+
+    PROCEDURE TRANSAKCJADELETE(
+        p_TransakcjaID IN TRANSAKCJA.TRANSAKCJAID%TYPE
+    ) AS
+        v_count NUMBER;
+    BEGIN
+        IF p_TransakcjaID IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20001, 'ID transakcji nie może być puste');
+        END IF;
+
+        SELECT COUNT(*) INTO v_count FROM TRANSAKCJA WHERE TRANSAKCJAID = p_TransakcjaID;
+        IF v_count = 0 THEN
+            RAISE_APPLICATION_ERROR(-20002, 'Transakcja o podanym ID nie istnieje');
+        END IF;
+
+        DELETE FROM TRANSAKCJAPRODUKT WHERE TRANSAKCJAID = p_TransakcjaID;
+
+        DELETE FROM TRANSAKCJA WHERE TRANSAKCJAID = p_TransakcjaID;
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            ROLLBACK;
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas usuwania transakcji: ' || SQLERRM);
+    END TRANSAKCJADELETE;
+
+    PROCEDURE TRANSAKCJAPRODUKTCREATE(
+        p_TransakcjaID IN TRANSAKCJA.TRANSAKCJAID%TYPE,
+        p_ProduktID IN PRODUKT.PRODUKTID%TYPE,
+        p_IloscProduktu IN NUMBER DEFAULT 1,
+        p_IloscAmunicji IN NUMBER DEFAULT 0
+    ) AS
+        v_ProduktCena PRODUKT.CENA%TYPE;
+        v_AmunicjaCena AMUNICJA.CENA%TYPE;
+        v_AmunicjaID PRODUKT.AMUNICJAID%TYPE;
+        v_WartoscCalkowita NUMBER := 0;
+        v_ProduktDostepny CHAR(1);
+        v_IloscAmunicji NUMBER;
+        v_IloscDoZapisu NUMBER;
+        v_KategoriaBroni CHAR(1);
+        v_KlientID KLIENT.KLIENTID%TYPE;
+        v_PracownikID PRACOWNIK.PRACOWNIKID%TYPE;
+        v_KlientPozwolenie CHAR(1);
+        v_PracownikPozwolenie CHAR(1);
+    BEGIN
+        BEGIN
+            SELECT KLIENTID, PRACOWNIKID INTO v_KlientID, v_PracownikID
+            FROM TRANSAKCJA
+            WHERE TRANSAKCJAID = p_TransakcjaID;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                RAISE_APPLICATION_ERROR(-20001, 'Transakcja o podanym ID nie istnieje');
+        END;
+
+        BEGIN
+            SELECT p.CENA, p.AMUNICJAID, p.DOSTEPNOSC, kp.WYMAGANEUPRAWNIENIA
+            INTO v_ProduktCena, v_AmunicjaID, v_ProduktDostepny, v_KategoriaBroni
+            FROM PRODUKT p
+                     JOIN KATEGORIAPRODUKTOW kp ON p.KATEGORIAID = kp.KATEGORIAID
+            WHERE p.PRODUKTID = p_ProduktID;
+
+            IF v_ProduktDostepny = '0' THEN
+                RAISE_APPLICATION_ERROR(-20002, 'Produkt nie jest dostępny');
+            END IF;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                RAISE_APPLICATION_ERROR(-20002, 'Produkt o podanym ID nie istnieje');
+        END;
+
+        IF v_AmunicjaID IS NOT NULL THEN
+
+            IF p_IloscAmunicji <= 0 THEN
+                RAISE_APPLICATION_ERROR(-20007, 'Ten produkt wymaga amunicji do zakupu');
+            END IF;
+
+            BEGIN
+                SELECT CENA, ILOSC INTO v_AmunicjaCena, v_IloscAmunicji
+                FROM AMUNICJA
+                WHERE AMUNICJAID = v_AmunicjaID;
+
+                IF v_IloscAmunicji < p_IloscAmunicji THEN
+                    RAISE_APPLICATION_ERROR(-20004, 'Dostępna ilość amunicji: ' || v_IloscAmunicji);
+                END IF;
+
+                v_WartoscCalkowita := v_WartoscCalkowita + (v_AmunicjaCena * p_IloscAmunicji);
+            EXCEPTION
+                WHEN NO_DATA_FOUND THEN
+                    RAISE_APPLICATION_ERROR(-20003, 'Amunicja dla tego produktu nie istnieje');
+            END;
+        END IF;
+
+
+        SELECT TYPPOZWOLENIA INTO v_KlientPozwolenie FROM KLIENT WHERE KLIENTID = v_KlientID;
+        SELECT TYPPOZWOLENIA INTO v_PracownikPozwolenie FROM PRACOWNIK WHERE PRACOWNIKID = v_PracownikID;
+
+        IF (v_KlientPozwolenie = 'A' AND v_KategoriaBroni != 'A') OR
+           (v_KlientPozwolenie = 'B' AND v_KategoriaBroni = 'C') THEN
+            RAISE_APPLICATION_ERROR(-20005, 'Klient nie posiada wystarczających uprawnień na tę broń');
+        END IF;
+
+        IF (v_PracownikPozwolenie = 'A' AND v_KategoriaBroni != 'A') OR
+           (v_PracownikPozwolenie = 'B' AND v_KategoriaBroni = 'C') THEN
+            RAISE_APPLICATION_ERROR(-20006, 'Pracownik nie posiada wystarczających uprawnień na tę broń');
+        END IF;
+
+        v_IloscDoZapisu := p_IloscAmunicji;
+        v_WartoscCalkowita := v_WartoscCalkowita + v_ProduktCena;
+
+        INSERT INTO TRANSAKCJAPRODUKT (TRANSAKCJAID, PRODUKTID, ILOSC, CENA)
+        VALUES (p_TransakcjaID, p_ProduktID, v_IloscDoZapisu, v_ProduktCena);
+
+        UPDATE TRANSAKCJA
+        SET WARTOSCTRANSAKCJI = WARTOSCTRANSAKCJI + v_WartoscCalkowita
+        WHERE TRANSAKCJAID = p_TransakcjaID;
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas dodawania produktu: ' || SQLERRM);
+    END TRANSAKCJAPRODUKTCREATE;
+
+    PROCEDURE TRANSAKCJAPRODUKTUPDATE(
+        p_TransakcjaID IN TRANSAKCJA.TRANSAKCJAID%TYPE,
+        p_ProduktID IN PRODUKT.PRODUKTID%TYPE,
+        p_IloscAmunicji IN NUMBER
+    ) AS
+        v_AmunicjaID PRODUKT.AMUNICJAID%TYPE;
+        v_AmunicjaCena AMUNICJA.CENA%TYPE;
+        v_AktualnaIloscAmunicji NUMBER;
+        v_IloscAmunicjiWMagazynie NUMBER;
+        v_ProduktCena PRODUKT.CENA%TYPE;
+    BEGIN
+        BEGIN
+            SELECT ILOSC INTO v_AktualnaIloscAmunicji
+            FROM TRANSAKCJAPRODUKT
+            WHERE TRANSAKCJAID = p_TransakcjaID AND PRODUKTID = p_ProduktID;
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                RAISE_APPLICATION_ERROR(-20001, 'Produkt nie znajduje się w tej transakcji');
+        END;
+
+        SELECT CENA, AMUNICJAID INTO v_ProduktCena, v_AmunicjaID
+        FROM PRODUKT
+        WHERE PRODUKTID = p_ProduktID;
+
+        IF v_AmunicjaID IS NOT NULL THEN
+            SELECT CENA, ILOSC INTO v_AmunicjaCena, v_IloscAmunicjiWMagazynie
+            FROM AMUNICJA
+            WHERE AMUNICJAID = v_AmunicjaID;
+
+            IF p_IloscAmunicji > v_AktualnaIloscAmunicji THEN
+                IF v_IloscAmunicjiWMagazynie < (p_IloscAmunicji - v_AktualnaIloscAmunicji) THEN
+                    RAISE_APPLICATION_ERROR(-20002, 'Brak wystarczającej ilości amunicji. Dostępna ilość: ' || v_IloscAmunicjiWMagazynie);
+                END IF;
+            END IF;
+
+            UPDATE TRANSAKCJA
+            SET WARTOSCTRANSAKCJI = WARTOSCTRANSAKCJI
+                                        - (v_ProduktCena + (v_AktualnaIloscAmunicji * v_AmunicjaCena))
+                + (v_ProduktCena + (p_IloscAmunicji * v_AmunicjaCena))
+            WHERE TRANSAKCJAID = p_TransakcjaID;
+        END IF;
+
+        UPDATE TRANSAKCJAPRODUKT
+        SET ILOSC = p_IloscAmunicji
+        WHERE TRANSAKCJAID = p_TransakcjaID AND PRODUKTID = p_ProduktID;
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            ROLLBACK;
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas aktualizacji ilości amunicji: ' || SQLERRM);
+    END TRANSAKCJAPRODUKTUPDATE;
+
+    PROCEDURE TRANSAKCJAPRODUKTDELETE(
+        p_TransakcjaID IN TRANSAKCJAPRODUKT.TRANSAKCJAID%TYPE,
+        p_ProduktID IN TRANSAKCJAPRODUKT.PRODUKTID%TYPE
+    ) AS
+        v_Ilosc NUMBER;
+        v_Cena NUMBER;
+        v_AmunicjaCena AMUNICJA.CENA%TYPE := 0;
+        v_AmunicjaID NUMBER;
+        v_WartoscDoOdjecia NUMBER := 0;
+    BEGIN
+        IF p_TransakcjaID IS NULL OR p_ProduktID IS NULL THEN
+            RAISE_APPLICATION_ERROR(-20001, 'ID transakcji i produktu nie mogą być puste');
+        END IF;
+
+        BEGIN
+            SELECT tp.ILOSC, tp.CENA, p.AMUNICJAID
+            INTO v_Ilosc, v_Cena, v_AmunicjaID
+            FROM TRANSAKCJAPRODUKT tp
+                     JOIN PRODUKT p ON tp.PRODUKTID = p.PRODUKTID
+            WHERE tp.TRANSAKCJAID = p_TransakcjaID
+              AND tp.PRODUKTID = p_ProduktID;
+
+            v_WartoscDoOdjecia := v_Cena;
+
+            IF v_AmunicjaID IS NOT NULL AND v_Ilosc > 0 THEN
+                SELECT CENA INTO v_AmunicjaCena
+                FROM AMUNICJA
+                WHERE AMUNICJAID = v_AmunicjaID;
+
+                v_WartoscDoOdjecia := v_WartoscDoOdjecia + (v_Ilosc * v_AmunicjaCena);
+            END IF;
+
+        EXCEPTION
+            WHEN NO_DATA_FOUND THEN
+                RAISE_APPLICATION_ERROR(-20003, 'Nie znaleziono danych produktu lub transakcji');
+        END;
+
+        UPDATE TRANSAKCJA
+        SET WARTOSCTRANSAKCJI = WARTOSCTRANSAKCJI - v_WartoscDoOdjecia
+        WHERE TRANSAKCJAID = p_TransakcjaID;
+
+        DELETE FROM TRANSAKCJAPRODUKT
+        WHERE TRANSAKCJAID = p_TransakcjaID
+          AND PRODUKTID = p_ProduktID;
+
+        IF SQL%ROWCOUNT = 0 THEN
+            ROLLBACK;
+            RAISE_APPLICATION_ERROR(-20002, 'Nie znaleziono produktu w zamówieniu');
+        END IF;
+
+    EXCEPTION
+        WHEN OTHERS THEN
+            ROLLBACK;
+            RAISE_APPLICATION_ERROR(-20099, 'Błąd podczas usuwania produktu z transakcji: ' || SQLERRM);
+    END TRANSAKCJAPRODUKTDELETE;
+        
+END TRANSAKCJA_PKG;
+/
+
+create PACKAGE STATYSTYKA_PKG AS
+
+    FUNCTION STATISTICPOPULARCITY
+        RETURN CITY_STATS_TAB PIPELINED;
+
+    FUNCTION STATISTICBESTWORKER
+        RETURN WORKER_STATS_TAB PIPELINED;
+
+    FUNCTION STATISTICBESTCLIENTS
+        RETURN CLIENT_STATS_TAB PIPELINED;
+
+    FUNCTION STATISTICAVERAGETRANSACTION
+        RETURN TRANSACTION_STATS_TAB PIPELINED;
+
+    FUNCTION STATISTICPRODUCT
+        RETURN PRODUCT_STATS_TAB PIPELINED;
+
+END STATYSTYKA_PKG;
+/
+
+create PACKAGE BODY STATYSTYKA_PKG AS
+
+    FUNCTION STATISTICPOPULARCITY
+        RETURN CITY_STATS_TAB PIPELINED
+    AS
+    BEGIN
+        FOR r IN (
+            SELECT
+                a.MIEJSCOWOSC,
+                COUNT(DISTINCT k.KLIENTID) as LICZBA_KLIENTOW,
+                COUNT(t.TRANSAKCJAID) as LICZBA_TRANSAKCJI,
+                NVL(SUM(t.WARTOSCTRANSAKCJI), 0) as LACZNA_WARTOSC_ZAKUPOW
+            FROM ADRES a
+                     JOIN KLIENT k ON a.ADRESID = k.ADRESID
+                     LEFT JOIN TRANSAKCJA t ON k.KLIENTID = t.KLIENTID
+            GROUP BY a.MIEJSCOWOSC
+            ORDER BY COUNT(DISTINCT k.KLIENTID) DESC
+                FETCH FIRST 5 ROWS ONLY
+        ) LOOP
+            PIPE ROW(CITY_STATS_OBJ(
+                r.MIEJSCOWOSC,
+                r.LICZBA_KLIENTOW,
+                r.LICZBA_TRANSAKCJI,
+                r.LACZNA_WARTOSC_ZAKUPOW
+            ));
+        END LOOP;
+        RETURN;
+    END STATISTICPOPULARCITY;
+
+    FUNCTION STATISTICBESTWORKER
+        RETURN WORKER_STATS_TAB PIPELINED
+    AS
+    BEGIN
+        FOR r IN (
+            SELECT
+                p.PRACOWNIKID,
+                p.IMIE,
+                p.NAZWISKO,
+                COUNT(t.TRANSAKCJAID) as LICZBA_TRANSAKCJI,
+                NVL(SUM(t.WARTOSCTRANSAKCJI), 0) as WARTOSC_SPRZEDAZY
+            FROM PRACOWNIK p
+                     LEFT JOIN TRANSAKCJA t ON p.PRACOWNIKID = t.PRACOWNIKID
+            WHERE p.STATUSAKTYWNOSCI = '1'
+            GROUP BY p.PRACOWNIKID, p.IMIE, p.NAZWISKO
+            ORDER BY LICZBA_TRANSAKCJI DESC
+        ) LOOP
+            PIPE ROW(WORKER_STATS_OBJ(
+                r.PRACOWNIKID,
+                r.IMIE,
+                r.NAZWISKO,
+                r.LICZBA_TRANSAKCJI,
+                r.WARTOSC_SPRZEDAZY
+            ));
+        END LOOP;
+        RETURN;
+    END STATISTICBESTWORKER;
+
+    FUNCTION STATISTICBESTCLIENTS
+        RETURN CLIENT_STATS_TAB PIPELINED
+    AS
+    BEGIN
+        FOR r IN (
+            SELECT
+                k.KLIENTID,
+                k.IMIE,
+                k.NAZWISKO,
+                COUNT(t.TRANSAKCJAID) as LICZBA_TRANSAKCJI,
+                NVL(SUM(t.WARTOSCTRANSAKCJI), 0) as SUMA_WYDATKOW
+            FROM KLIENT k
+                     LEFT JOIN TRANSAKCJA t ON k.KLIENTID = t.KLIENTID
+            GROUP BY k.KLIENTID, k.IMIE, k.NAZWISKO
+            ORDER BY SUMA_WYDATKOW DESC
+        ) LOOP
+            PIPE ROW(CLIENT_STATS_OBJ(
+                r.KLIENTID,
+                r.IMIE,
+                r.NAZWISKO,
+                r.LICZBA_TRANSAKCJI,
+                r.SUMA_WYDATKOW
+            ));
+        END LOOP;
+        RETURN;
+    END STATISTICBESTCLIENTS;
+
+    FUNCTION STATISTICAVERAGETRANSACTION
+        RETURN TRANSACTION_STATS_TAB PIPELINED
+    AS
+    BEGIN
+        FOR r IN (
+            SELECT
+                COUNT(TRANSAKCJAID) as LICZBA_TRANSAKCJI,
+                NVL(SUM(WARTOSCTRANSAKCJI), 0) as SUMA_TRANSAKCJI,
+                NVL(ROUND(AVG(WARTOSCTRANSAKCJI), 2), 0) as SREDNIA_WARTOSC,
+                NVL(MIN(WARTOSCTRANSAKCJI), 0) as NAJMNIEJSZA_TRANSAKCJA,
+                NVL(MAX(WARTOSCTRANSAKCJI), 0) as NAJWIEKSZA_TRANSAKCJA
+            FROM TRANSAKCJA
+            WHERE WARTOSCTRANSAKCJI > 0
+        ) LOOP
+            PIPE ROW(TRANSACTION_STATS_OBJ(
+                r.LICZBA_TRANSAKCJI,
+                r.SUMA_TRANSAKCJI,
+                r.SREDNIA_WARTOSC,
+                r.NAJMNIEJSZA_TRANSAKCJA,
+                r.NAJWIEKSZA_TRANSAKCJA
+            ));
+        END LOOP;
+        RETURN;
+    END STATISTICAVERAGETRANSACTION;
+
+    FUNCTION STATISTICPRODUCT
+        RETURN PRODUCT_STATS_TAB PIPELINED
+    AS
+    BEGIN
+        FOR r IN (
+            SELECT
+                p.NAZWA as NAZWA_BRONI,
+                MIN(p.PRODUKTID) as PRZYKLADOWE_PRODUKTID,
+                MAX(kp.NAZWAKATEGORII) as KATEGORIA,
+                COUNT(tp.PRODUKTID) as LICZBA_ZAMOWIEN,
+                SUM(tp.ILOSC) as LACZNA_ILOSC,
+                SUM(tp.ILOSC * p.CENA) as LACZNA_WARTOSC_SPRZEDAZY
+            FROM PRODUKT p
+                     JOIN KATEGORIAPRODUKTOW kp ON p.KATEGORIAID = kp.KATEGORIAID
+                     LEFT JOIN TRANSAKCJAPRODUKT tp ON p.PRODUKTID = tp.PRODUKTID
+            WHERE kp.NAZWAKATEGORII LIKE '%broń%'
+               OR kp.NAZWAKATEGORII LIKE '%Broń%'
+               OR kp.NAZWAKATEGORII LIKE '%Akcesoria%'
+            GROUP BY p.NAZWA
+            ORDER BY LICZBA_ZAMOWIEN DESC
+            ) LOOP
+                PIPE ROW(PRODUCT_STATS_OBJ(
+                        r.NAZWA_BRONI,
+                        r.PRZYKLADOWE_PRODUKTID,
+                        r.KATEGORIA,
+                        r.LICZBA_ZAMOWIEN,
+                        r.LACZNA_ILOSC,
+                        r.LACZNA_WARTOSC_SPRZEDAZY
+                         ));
+            END LOOP;
+        RETURN;
+    END STATISTICPRODUCT;
+
+END STATYSTYKA_PKG;
+/
+
+
